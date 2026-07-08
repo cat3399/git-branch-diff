@@ -2,7 +2,7 @@
   "name": "git-branch-diff",
   "displayName": "Git Branch Diff",
   "description": "Compare all files between two git branches and view each file's changes in a side-by-side diff.",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "publisher": "firdaushatta",
   "license": "MIT",
   "author": {

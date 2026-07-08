@@ -5,6 +5,14 @@ All notable changes to the Branch Diff extension are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.3] - 2026-07-08
+
+### Fixed
+
+- Use a direct `raw.githubusercontent.com` URL for the README image so it loads
+  reliably on the Marketplace listing (the auto-rewritten `github.com/.../raw`
+  URL was rate-limited and intermittently failed).
+
 ## [0.1.2] - 2026-07-08
 
 ### Fixed
@@ -50,6 +58,7 @@ First public release.
 - Unit tests for the git output parsers; CI and a tagged-release workflow that
   packages a `.vsix`.
 
+[0.1.3]: https://github.com/firdaushatta/git-branch-diff/releases/tag/v0.1.3
 [0.1.2]: https://github.com/firdaushatta/git-branch-diff/releases/tag/v0.1.2
 [0.1.1]: https://github.com/firdaushatta/git-branch-diff/releases/tag/v0.1.1
 [0.1.0]: https://github.com/firdaushatta/git-branch-diff/releases/tag/v0.1.0

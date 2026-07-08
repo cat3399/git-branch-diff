@@ -6,7 +6,7 @@
 
 A VS Code extension that compares **all files** between two git branches and shows the changes for each file — like a local pull-request view.
 
-<img src="media/hero.png" alt="Branch Diff — changed-files sidebar beside a side-by-side diff" width="900">
+<img src="https://raw.githubusercontent.com/firdaushatta/git-branch-diff/master/media/hero.png" alt="Branch Diff — changed-files sidebar beside a side-by-side diff" width="900">
 
 
 ## Install
