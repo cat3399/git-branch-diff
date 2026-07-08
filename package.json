@@ -1,0 +1,303 @@
+{
+  "name": "git-branch-diff",
+  "displayName": "Git Branch Diff",
+  "description": "Compare all files between two git branches and view each file's changes in a side-by-side diff.",
+  "version": "0.1.0",
+  "publisher": "firdaushatta",
+  "license": "MIT",
+  "author": {
+    "name": "Firdaus Hatta"
+  },
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "icon": "media/icon.png",
+  "galleryBanner": {
+    "color": "#0d1b2a",
+    "theme": "dark"
+  },
+  "pricing": "Free",
+  "categories": [
+    "SCM Providers",
+    "Other"
+  ],
+  "keywords": [
+    "git",
+    "diff",
+    "branch",
+    "compare",
+    "pull request"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/firdaushatta/git-branch-diff.git"
+  },
+  "bugs": {
+    "url": "https://github.com/firdaushatta/git-branch-diff/issues"
+  },
+  "homepage": "https://github.com/firdaushatta/git-branch-diff#readme",
+  "sponsor": {
+    "url": "https://buymeacoffee.com/firdaushatta"
+  },
+  "main": "./dist/extension.js",
+  "activationEvents": [
+    "onView:branchDiff.filesView"
+  ],
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "branch-diff",
+          "title": "Branch Diff",
+          "icon": "media/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "branch-diff": [
+        {
+          "id": "branchDiff.filesView",
+          "name": "Changed Files"
+        }
+      ]
+    },
+    "viewsWelcome": [
+      {
+        "view": "branchDiff.filesView",
+        "contents": "No target branch selected.\nCompare the current branch against another branch to see every changed file.\n[Select Target Branch](command:branchDiff.selectTarget)"
+      }
+    ],
+    "commands": [
+      {
+        "command": "branchDiff.selectSource",
+        "title": "Branch Diff: Select Source Branch",
+        "icon": "$(git-branch)"
+      },
+      {
+        "command": "branchDiff.selectTarget",
+        "title": "Branch Diff: Select Target Branch",
+        "icon": "$(git-compare)"
+      },
+      {
+        "command": "branchDiff.swap",
+        "title": "Branch Diff: Swap Source and Target",
+        "icon": "$(arrow-swap)"
+      },
+      {
+        "command": "branchDiff.refresh",
+        "title": "Branch Diff: Refresh",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "branchDiff.openChange",
+        "title": "Branch Diff: Open Change"
+      },
+      {
+        "command": "branchDiff.openFile",
+        "title": "Open File",
+        "icon": "$(go-to-file)"
+      },
+      {
+        "command": "branchDiff.openFileAtLine",
+        "title": "Branch Diff: Open File at This Line",
+        "icon": "$(go-to-file)"
+      },
+      {
+        "command": "branchDiff.copyLineReference",
+        "title": "Copy Line Reference"
+      },
+      {
+        "command": "branchDiff.copyLine",
+        "title": "Copy Line"
+      },
+      {
+        "command": "branchDiff.openToSide",
+        "title": "Open to the Side",
+        "icon": "$(split-horizontal)"
+      },
+      {
+        "command": "branchDiff.copyPath",
+        "title": "Copy Path"
+      },
+      {
+        "command": "branchDiff.copyRelativePath",
+        "title": "Copy Relative Path"
+      },
+      {
+        "command": "branchDiff.revealInExplorer",
+        "title": "Reveal in Explorer"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "branchDiff.selectSource",
+          "when": "view == branchDiff.filesView",
+          "group": "navigation@1"
+        },
+        {
+          "command": "branchDiff.selectTarget",
+          "when": "view == branchDiff.filesView",
+          "group": "navigation@2"
+        },
+        {
+          "command": "branchDiff.swap",
+          "when": "view == branchDiff.filesView",
+          "group": "navigation@3"
+        },
+        {
+          "command": "branchDiff.refresh",
+          "when": "view == branchDiff.filesView",
+          "group": "navigation@4"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "branchDiff.selectSource",
+          "when": "view == branchDiff.filesView && viewItem == branchDiffRepo",
+          "group": "navigation@1"
+        },
+        {
+          "command": "branchDiff.selectTarget",
+          "when": "view == branchDiff.filesView && viewItem == branchDiffRepo",
+          "group": "navigation@2"
+        },
+        {
+          "command": "branchDiff.swap",
+          "when": "view == branchDiff.filesView && viewItem == branchDiffRepo",
+          "group": "navigation@3"
+        },
+        {
+          "command": "branchDiff.swap",
+          "when": "view == branchDiff.filesView && viewItem == branchDiffRepo",
+          "group": "inline@1"
+        },
+        {
+          "command": "branchDiff.refresh",
+          "when": "view == branchDiff.filesView && viewItem == branchDiffRepo",
+          "group": "inline@2"
+        },
+        {
+          "command": "branchDiff.openFile",
+          "when": "view == branchDiff.filesView && viewItem == branchDiffChange",
+          "group": "inline"
+        },
+        {
+          "command": "branchDiff.openFile",
+          "when": "view == branchDiff.filesView && viewItem == branchDiffChange",
+          "group": "navigation@1"
+        },
+        {
+          "command": "branchDiff.openToSide",
+          "when": "view == branchDiff.filesView && viewItem == branchDiffChange",
+          "group": "navigation@2"
+        },
+        {
+          "command": "branchDiff.copyPath",
+          "when": "view == branchDiff.filesView && (viewItem == branchDiffChange || viewItem == branchDiffFolder)",
+          "group": "1_copy@1"
+        },
+        {
+          "command": "branchDiff.copyRelativePath",
+          "when": "view == branchDiff.filesView && (viewItem == branchDiffChange || viewItem == branchDiffFolder)",
+          "group": "1_copy@2"
+        },
+        {
+          "command": "branchDiff.revealInExplorer",
+          "when": "view == branchDiff.filesView && (viewItem == branchDiffChange || viewItem == branchDiffFolder)",
+          "group": "2_reveal@1"
+        }
+      ],
+      "editor/context": [
+        {
+          "command": "branchDiff.openFileAtLine",
+          "when": "resourceScheme == branchdiff",
+          "group": "branchDiff@1"
+        },
+        {
+          "command": "branchDiff.copyLineReference",
+          "when": "resourceScheme == branchdiff",
+          "group": "branchDiff@2"
+        },
+        {
+          "command": "branchDiff.copyLine",
+          "when": "resourceScheme == branchdiff",
+          "group": "branchDiff@3"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "branchDiff.openChange",
+          "when": "false"
+        },
+        {
+          "command": "branchDiff.openFile",
+          "when": "false"
+        },
+        {
+          "command": "branchDiff.openFileAtLine",
+          "when": "false"
+        },
+        {
+          "command": "branchDiff.copyLineReference",
+          "when": "false"
+        },
+        {
+          "command": "branchDiff.copyLine",
+          "when": "false"
+        },
+        {
+          "command": "branchDiff.openToSide",
+          "when": "false"
+        },
+        {
+          "command": "branchDiff.copyPath",
+          "when": "false"
+        },
+        {
+          "command": "branchDiff.copyRelativePath",
+          "when": "false"
+        },
+        {
+          "command": "branchDiff.revealInExplorer",
+          "when": "false"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Branch Diff",
+      "properties": {
+        "branchDiff.useMergeBase": {
+          "type": "boolean",
+          "default": true,
+          "description": "Compare against the merge-base of the current branch and the target (3-dot diff, like a GitHub PR). Disable to compare directly against the target branch tip (2-dot diff)."
+        },
+        "branchDiff.groupByFolder": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show changed files in a collapsible folder tree (single-child folders are compacted). Disable for a flat list."
+        },
+        "branchDiff.includeUntracked": {
+          "type": "boolean",
+          "default": true,
+          "description": "When comparing from the Working Tree, include untracked files as added."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run package",
+    "compile": "node esbuild.js",
+    "watch": "node esbuild.js --watch",
+    "package": "node esbuild.js --production",
+    "check-types": "tsc --noEmit",
+    "pretest": "node esbuild.test.js",
+    "test": "node --test \"dist-test/**/*.test.js\""
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@types/vscode": "^1.85.0",
+    "esbuild": "^0.25.0",
+    "typescript": "^5.4.0"
+  }
+}

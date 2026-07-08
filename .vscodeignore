@@ -1,0 +1,16 @@
+.vscode/**
+.github/**
+src/**
+dist-test/**
+node_modules/**
+esbuild.js
+esbuild.test.js
+media/icon-source.png
+media/hero.svg
+PUBLISHING.md
+tsconfig.json
+.gitignore
+.vscodeignore
+package-lock.json
+**/*.map
+**/*.ts

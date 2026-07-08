@@ -1,0 +1,84 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="420" viewBox="0 0 900 420" font-family="-apple-system, Segoe UI, Roboto, sans-serif">
+  <style>
+    .bg{fill:#1e1e1e}
+    .panel{fill:#252526}
+    .editor{fill:#1e1e1e}
+    .txt{fill:#cccccc}
+    .dim{fill:#8b8b8b}
+    .add{fill:#4ec98a}
+    .del{fill:#e5534b}
+    .mod{fill:#d1a24a}
+    .head{fill:#9cdcfe}
+    .addbg{fill:#12341f}
+    .delbg{fill:#3a1c1b}
+    .mono{font-family:'SF Mono', Menlo, Consolas, monospace}
+  </style>
+
+  <rect class="bg" width="900" height="420" rx="10"/>
+
+  <!-- Activity bar -->
+  <rect class="panel" x="0" y="0" width="48" height="420" rx="10"/>
+  <g fill="none" stroke="#e6edf3" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="19" cy="70" r="5"/>
+    <circle cx="19" cy="104" r="5"/>
+    <circle cx="35" cy="104" r="5"/>
+    <path d="M19 75 v24"/>
+    <path d="M35 99 v-6 a8 8 0 0 0 -8 -8 h-3"/>
+  </g>
+
+  <!-- Sidebar -->
+  <rect class="panel" x="48" y="0" width="320" height="420"/>
+  <text class="dim" x="68" y="34" font-size="12" letter-spacing="1.2">BRANCH DIFF</text>
+  <text class="dim" x="272" y="34" font-size="12">feature → main</text>
+
+  <!-- repo header -->
+  <text class="txt mono" x="70" y="72" font-size="13">▾ web-app</text>
+  <text class="dim mono" x="150" y="72" font-size="12">feature → main  (4)</text>
+
+  <!-- files -->
+  <g font-size="13" class="mono">
+    <text class="txt" x="88" y="102">▾ src</text>
+
+    <text class="txt" x="108" y="128">App.tsx</text>
+    <text class="dim" x="250" y="128" font-size="12">+18 −3</text>
+    <text class="mod" x="336" y="128" font-weight="700">M</text>
+
+    <text class="txt" x="108" y="154">router.ts</text>
+    <text class="dim" x="250" y="154" font-size="12">+42</text>
+    <text class="add" x="336" y="154" font-weight="700">A</text>
+
+    <text class="txt" x="108" y="180">legacy.ts</text>
+    <text class="dim" x="250" y="180" font-size="12">−67</text>
+    <text class="del" x="336" y="180" font-weight="700">D</text>
+
+    <text class="txt" x="88" y="206">README.md</text>
+    <text class="dim" x="250" y="206" font-size="12">+5 −1</text>
+    <text class="mod" x="336" y="206" font-weight="700">M</text>
+  </g>
+
+  <text class="dim mono" x="70" y="250" font-size="12">4 files changed · +65 −71</text>
+
+  <!-- Diff editor -->
+  <rect class="editor" x="368" y="0" width="532" height="420"/>
+  <rect class="panel" x="368" y="0" width="532" height="30"/>
+  <text class="txt mono" x="388" y="20" font-size="12">App.tsx (main ↔ feature)</text>
+  <line x1="634" y1="30" x2="634" y2="420" stroke="#333" stroke-width="1"/>
+
+  <!-- left side (base) -->
+  <g class="mono" font-size="12">
+    <text class="dim" x="382" y="60">12</text><text class="txt" x="410" y="60">function greet(name) {</text>
+    <rect class="delbg" x="368" y="70" width="266" height="18"/>
+    <text class="dim" x="382" y="84">13</text><text class="txt" x="410" y="84">  return "hi " + name</text>
+    <text class="dim" x="382" y="108">14</text><text class="txt" x="410" y="108">}</text>
+  </g>
+
+  <!-- right side (source) -->
+  <g class="mono" font-size="12">
+    <text class="dim" x="648" y="60">12</text><text class="txt" x="676" y="60">function greet(name: string) {</text>
+    <rect class="addbg" x="634" y="70" width="266" height="18"/>
+    <text class="dim" x="648" y="84">13</text><text class="txt" x="676" y="84">  return `hi ${name}`</text>
+    <text class="dim" x="648" y="108">14</text><text class="txt" x="676" y="108">}</text>
+  </g>
+
+  <text class="dim mono" x="388" y="150" font-size="11">Compare any branch, tag, commit, or the working tree.</text>
+</svg>

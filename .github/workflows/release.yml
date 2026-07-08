@@ -1,0 +1,47 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type-check
+        run: npm run check-types
+
+      - name: Test
+        run: npm test
+
+      - name: Package VSIX
+        run: npx --yes @vscode/vsce package --out git-branch-diff-${{ github.ref_name }}.vsix
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: git-branch-diff-*.vsix
+          generate_release_notes: true
+
+      # Optional: publish to the VS Code Marketplace.
+      # Requires a VSCE_PAT repository secret (a Marketplace Personal Access Token).
+      - name: Publish to Marketplace
+        if: ${{ env.VSCE_PAT != '' }}
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+        run: npx --yes @vscode/vsce publish --pat "$VSCE_PAT"
