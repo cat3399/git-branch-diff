@@ -1,9 +1,9 @@
 {
-  "name": "git-branch-diff",
-  "displayName": "Git Branch Diff",
-  "description": "Compare all files between two git branches and view each file's changes in a side-by-side diff.",
-  "version": "0.1.3",
-  "publisher": "firdaushatta",
+  "name": "git-branch-diff-local",
+  "displayName": "Git Branch Diff (Local)",
+  "description": "%extension.description%",
+  "version": "0.3.0",
+  "publisher": "local",
   "license": "MIT",
   "author": {
     "name": "Firdaus Hatta"
@@ -32,255 +32,280 @@
     "type": "git",
     "url": "https://github.com/firdaushatta/git-branch-diff.git"
   },
-  "bugs": {
-    "url": "https://github.com/firdaushatta/git-branch-diff/issues"
-  },
-  "homepage": "https://github.com/firdaushatta/git-branch-diff#readme",
-  "sponsor": {
-    "url": "https://buymeacoffee.com/firdaushatta"
-  },
   "main": "./dist/extension.js",
   "activationEvents": [
-    "onView:branchDiff.filesView"
+    "onView:branchDiffLocal.filesView"
   ],
   "contributes": {
     "viewsContainers": {
       "activitybar": [
         {
-          "id": "branch-diff",
+          "id": "branch-diff-local",
           "title": "Branch Diff",
           "icon": "media/icon.svg"
         }
       ]
     },
     "views": {
-      "branch-diff": [
+      "branch-diff-local": [
         {
-          "id": "branchDiff.filesView",
-          "name": "Changed Files"
+          "id": "branchDiffLocal.filesView",
+          "name": "%view.files%",
+          "type": "webview"
         }
       ]
     },
-    "viewsWelcome": [
-      {
-        "view": "branchDiff.filesView",
-        "contents": "No target branch selected.\nCompare the current branch against another branch to see every changed file.\n[Select Target Branch](command:branchDiff.selectTarget)"
-      }
-    ],
     "commands": [
       {
-        "command": "branchDiff.selectSource",
-        "title": "Branch Diff: Select Source Branch",
+        "command": "branchDiffLocal.selectSource",
+        "title": "%command.selectSource%",
         "icon": "$(git-branch)"
       },
       {
-        "command": "branchDiff.selectTarget",
-        "title": "Branch Diff: Select Target Branch",
+        "command": "branchDiffLocal.selectTarget",
+        "title": "%command.selectTarget%",
         "icon": "$(git-compare)"
       },
       {
-        "command": "branchDiff.swap",
-        "title": "Branch Diff: Swap Source and Target",
+        "command": "branchDiffLocal.swap",
+        "title": "%command.swap%",
         "icon": "$(arrow-swap)"
       },
       {
-        "command": "branchDiff.refresh",
-        "title": "Branch Diff: Refresh",
+        "command": "branchDiffLocal.refresh",
+        "title": "%command.refresh%",
         "icon": "$(refresh)"
       },
       {
-        "command": "branchDiff.openChange",
-        "title": "Branch Diff: Open Change"
+        "command": "branchDiffLocal.selectComparisonMode",
+        "title": "%command.selectComparisonMode%"
       },
       {
-        "command": "branchDiff.openFile",
-        "title": "Open File",
+        "command": "branchDiffLocal.openChange",
+        "title": "%command.openChange%"
+      },
+      {
+        "command": "branchDiffLocal.openFile",
+        "title": "%command.openFile%",
         "icon": "$(go-to-file)"
       },
       {
-        "command": "branchDiff.openFileAtLine",
-        "title": "Branch Diff: Open File at This Line",
+        "command": "branchDiffLocal.openFileAtLine",
+        "title": "%command.openFileAtLine%",
         "icon": "$(go-to-file)"
       },
       {
-        "command": "branchDiff.copyLineReference",
-        "title": "Copy Line Reference"
+        "command": "branchDiffLocal.copyLineReference",
+        "title": "%command.copyLineReference%"
       },
       {
-        "command": "branchDiff.copyLine",
-        "title": "Copy Line"
+        "command": "branchDiffLocal.copyLine",
+        "title": "%command.copyLine%"
       },
       {
-        "command": "branchDiff.openToSide",
-        "title": "Open to the Side",
+        "command": "branchDiffLocal.openToSide",
+        "title": "%command.openToSide%",
         "icon": "$(split-horizontal)"
       },
       {
-        "command": "branchDiff.copyPath",
-        "title": "Copy Path"
+        "command": "branchDiffLocal.copyPath",
+        "title": "%command.copyPath%"
       },
       {
-        "command": "branchDiff.copyRelativePath",
-        "title": "Copy Relative Path"
+        "command": "branchDiffLocal.copyRelativePath",
+        "title": "%command.copyRelativePath%"
       },
       {
-        "command": "branchDiff.revealInExplorer",
-        "title": "Reveal in Explorer"
+        "command": "branchDiffLocal.revealInExplorer",
+        "title": "%command.revealInExplorer%"
+      },
+      {
+        "command": "branchDiffLocal.excludeEntry",
+        "title": "%command.excludeEntry%"
+      },
+      {
+        "command": "branchDiffLocal.restoreExcluded",
+        "title": "%command.restoreExcluded%",
+        "enablement": "branchDiffLocal.hasExclusions"
+      },
+      {
+        "command": "branchDiffLocal.compareStaged",
+        "title": "%command.compareStaged%"
+      },
+      {
+        "command": "branchDiffLocal.compareUnstaged",
+        "title": "%command.compareUnstaged%"
+      },
+      {
+        "command": "branchDiffLocal.compareWorkingTree",
+        "title": "%command.compareWorkingTree%"
       }
     ],
     "menus": {
       "view/title": [
         {
-          "command": "branchDiff.selectSource",
-          "when": "view == branchDiff.filesView",
+          "command": "branchDiffLocal.selectTarget",
+          "when": "view == branchDiffLocal.filesView",
           "group": "navigation@1"
         },
         {
-          "command": "branchDiff.selectTarget",
-          "when": "view == branchDiff.filesView",
+          "command": "branchDiffLocal.selectSource",
+          "when": "view == branchDiffLocal.filesView",
           "group": "navigation@2"
         },
         {
-          "command": "branchDiff.swap",
-          "when": "view == branchDiff.filesView",
+          "command": "branchDiffLocal.swap",
+          "when": "view == branchDiffLocal.filesView",
           "group": "navigation@3"
         },
         {
-          "command": "branchDiff.refresh",
-          "when": "view == branchDiff.filesView",
+          "command": "branchDiffLocal.refresh",
+          "when": "view == branchDiffLocal.filesView",
           "group": "navigation@4"
-        }
-      ],
-      "view/item/context": [
-        {
-          "command": "branchDiff.selectSource",
-          "when": "view == branchDiff.filesView && viewItem == branchDiffRepo",
-          "group": "navigation@1"
         },
         {
-          "command": "branchDiff.selectTarget",
-          "when": "view == branchDiff.filesView && viewItem == branchDiffRepo",
-          "group": "navigation@2"
+          "command": "branchDiffLocal.selectComparisonMode",
+          "when": "view == branchDiffLocal.filesView",
+          "group": "0_mode@0"
         },
         {
-          "command": "branchDiff.swap",
-          "when": "view == branchDiff.filesView && viewItem == branchDiffRepo",
-          "group": "navigation@3"
+          "command": "branchDiffLocal.compareStaged",
+          "when": "view == branchDiffLocal.filesView",
+          "group": "1_compare@0"
         },
         {
-          "command": "branchDiff.swap",
-          "when": "view == branchDiff.filesView && viewItem == branchDiffRepo",
-          "group": "inline@1"
+          "command": "branchDiffLocal.compareUnstaged",
+          "when": "view == branchDiffLocal.filesView",
+          "group": "1_compare@1"
         },
         {
-          "command": "branchDiff.refresh",
-          "when": "view == branchDiff.filesView && viewItem == branchDiffRepo",
-          "group": "inline@2"
+          "command": "branchDiffLocal.compareWorkingTree",
+          "when": "view == branchDiffLocal.filesView",
+          "group": "1_compare@2"
         },
         {
-          "command": "branchDiff.openFile",
-          "when": "view == branchDiff.filesView && viewItem == branchDiffChange",
-          "group": "inline"
-        },
-        {
-          "command": "branchDiff.openFile",
-          "when": "view == branchDiff.filesView && viewItem == branchDiffChange",
-          "group": "navigation@1"
-        },
-        {
-          "command": "branchDiff.openToSide",
-          "when": "view == branchDiff.filesView && viewItem == branchDiffChange",
-          "group": "navigation@2"
-        },
-        {
-          "command": "branchDiff.copyPath",
-          "when": "view == branchDiff.filesView && (viewItem == branchDiffChange || viewItem == branchDiffFolder)",
-          "group": "1_copy@1"
-        },
-        {
-          "command": "branchDiff.copyRelativePath",
-          "when": "view == branchDiff.filesView && (viewItem == branchDiffChange || viewItem == branchDiffFolder)",
-          "group": "1_copy@2"
-        },
-        {
-          "command": "branchDiff.revealInExplorer",
-          "when": "view == branchDiff.filesView && (viewItem == branchDiffChange || viewItem == branchDiffFolder)",
-          "group": "2_reveal@1"
+          "command": "branchDiffLocal.restoreExcluded",
+          "when": "view == branchDiffLocal.filesView && branchDiffLocal.hasExclusions",
+          "group": "2_filter@0"
         }
       ],
       "editor/context": [
         {
-          "command": "branchDiff.openFileAtLine",
-          "when": "resourceScheme == branchdiff",
+          "command": "branchDiffLocal.openFileAtLine",
+          "when": "resourceScheme == branchdiff-local",
           "group": "branchDiff@1"
         },
         {
-          "command": "branchDiff.copyLineReference",
-          "when": "resourceScheme == branchdiff",
+          "command": "branchDiffLocal.copyLineReference",
+          "when": "resourceScheme == branchdiff-local",
           "group": "branchDiff@2"
         },
         {
-          "command": "branchDiff.copyLine",
-          "when": "resourceScheme == branchdiff",
+          "command": "branchDiffLocal.copyLine",
+          "when": "resourceScheme == branchdiff-local",
           "group": "branchDiff@3"
         }
       ],
       "commandPalette": [
         {
-          "command": "branchDiff.openChange",
+          "command": "branchDiffLocal.openChange",
           "when": "false"
         },
         {
-          "command": "branchDiff.openFile",
+          "command": "branchDiffLocal.openFile",
           "when": "false"
         },
         {
-          "command": "branchDiff.openFileAtLine",
+          "command": "branchDiffLocal.openFileAtLine",
           "when": "false"
         },
         {
-          "command": "branchDiff.copyLineReference",
+          "command": "branchDiffLocal.copyLineReference",
           "when": "false"
         },
         {
-          "command": "branchDiff.copyLine",
+          "command": "branchDiffLocal.copyLine",
           "when": "false"
         },
         {
-          "command": "branchDiff.openToSide",
+          "command": "branchDiffLocal.openToSide",
           "when": "false"
         },
         {
-          "command": "branchDiff.copyPath",
+          "command": "branchDiffLocal.copyPath",
           "when": "false"
         },
         {
-          "command": "branchDiff.copyRelativePath",
+          "command": "branchDiffLocal.copyRelativePath",
           "when": "false"
         },
         {
-          "command": "branchDiff.revealInExplorer",
+          "command": "branchDiffLocal.revealInExplorer",
           "when": "false"
+        },
+        {
+          "command": "branchDiffLocal.excludeEntry",
+          "when": "false"
+        }
+      ],
+      "webview/context": [
+        {
+          "command": "branchDiffLocal.openFile",
+          "when": "webviewId == branchDiffLocal.filesView && webviewSection == file",
+          "group": "1_open@0"
+        },
+        {
+          "command": "branchDiffLocal.openToSide",
+          "when": "webviewId == branchDiffLocal.filesView && webviewSection == file",
+          "group": "1_open@1"
+        },
+        {
+          "command": "branchDiffLocal.copyPath",
+          "when": "webviewId == branchDiffLocal.filesView && (webviewSection == file || webviewSection == folder)",
+          "group": "2_file@0"
+        },
+        {
+          "command": "branchDiffLocal.copyRelativePath",
+          "when": "webviewId == branchDiffLocal.filesView && (webviewSection == file || webviewSection == folder)",
+          "group": "2_file@1"
+        },
+        {
+          "command": "branchDiffLocal.revealInExplorer",
+          "when": "webviewId == branchDiffLocal.filesView && (webviewSection == file || webviewSection == folder)",
+          "group": "2_file@2"
+        },
+        {
+          "command": "branchDiffLocal.excludeEntry",
+          "when": "webviewId == branchDiffLocal.filesView && (webviewSection == file || webviewSection == folder)",
+          "group": "2_file@3"
+        },
+        {
+          "command": "branchDiffLocal.restoreExcluded",
+          "when": "webviewId == branchDiffLocal.filesView && branchDiffLocal.hasExclusions",
+          "group": "2_file@4"
         }
       ]
     },
     "configuration": {
       "title": "Branch Diff",
       "properties": {
-        "branchDiff.useMergeBase": {
+        "branchDiffLocal.useMergeBase": {
           "type": "boolean",
-          "default": true,
-          "description": "Compare against the merge-base of the current branch and the target (3-dot diff, like a GitHub PR). Disable to compare directly against the target branch tip (2-dot diff)."
+          "scope": "resource",
+          "default": false,
+          "description": "%setting.useMergeBase%"
         },
-        "branchDiff.groupByFolder": {
+        "branchDiffLocal.groupByFolder": {
           "type": "boolean",
+          "scope": "resource",
           "default": true,
-          "description": "Show changed files in a collapsible folder tree (single-child folders are compacted). Disable for a flat list."
+          "description": "%setting.groupByFolder%"
         },
-        "branchDiff.includeUntracked": {
+        "branchDiffLocal.includeUntracked": {
           "type": "boolean",
+          "scope": "resource",
           "default": true,
-          "description": "When comparing from the Working Tree, include untracked files as added."
+          "description": "%setting.includeUntracked%"
         }
       }
     }
@@ -297,7 +322,12 @@
   "devDependencies": {
     "@types/node": "^20.11.0",
     "@types/vscode": "^1.85.0",
+    "@vscode/codicons": "^0.0.46-24",
     "esbuild": "^0.25.0",
     "typescript": "^5.4.0"
+  },
+  "l10n": "./l10n",
+  "dependencies": {
+    "jsonc-parser": "^3.3.1"
   }
 }

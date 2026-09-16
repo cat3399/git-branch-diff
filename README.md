@@ -1,92 +1,89 @@
-# Branch Diff
+# Git Branch Diff（本地版）
 
-[![CI](https://github.com/firdaushatta/git-branch-diff/actions/workflows/ci.yml/badge.svg)](https://github.com/firdaushatta/git-branch-diff/actions/workflows/ci.yml)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Buy Me A Coffee](https://img.shields.io/badge/Buy%20Me%20A%20Coffee-support-yellow.svg?logo=buymeacoffee&logoColor=black)](https://buymeacoffee.com/firdaushatta)
+基于 [firdaushatta/git-branch-diff](https://github.com/firdaushatta/git-branch-diff) 修改的 VS Code 扩展。可以选择任意两个版本，在侧栏查看全部变化文件，并用 VS Code 原生 Diff 编辑器查看代码。
 
-A VS Code extension that compares **all files** between two git branches and shows the changes for each file — like a local pull-request view.
+## 本地版的调整
 
-<img src="https://raw.githubusercontent.com/firdaushatta/git-branch-diff/master/media/hero.png" alt="Branch Diff — changed-files sidebar beside a side-by-side diff" width="900">
+- 文件名保持当前主题的普通文字颜色，A / M / D / R 等状态标记各自着色。
+- 新增行数显示为绿色，删除行数显示为红色，文件统计常驻显示。
+- 鼠标悬停目录时，在同一行显示该目录及子目录的累计行数；移开后隐藏。展开和折叠状态下都可查看。
+- 文件图标复用当前 VS Code 文件图标主题的资源；展开箭头、交换和打开文件按钮使用官方 Codicons。
+- 版本选择、交换和刷新使用 VS Code 原生视图工具栏，已选版本显示在原生视图标题中。
+- 两侧都支持当前工作区、暂存区、HEAD、具体提交、本地和远程分支、Tag，以及手动输入 Git ref。
+- 提交选择器显示提交说明、SHA、作者和日期，支持搜索已加载记录及加载更早的提交。
+- 选择分支后，可跟随该分支的最新提交，或浏览该分支历史并固定到某个提交。原生返回按钮可逐级返回。
+- 原生更多菜单可切换直接比较和 PR 比较；文件列表顶部显示实际参与比较的提交 SHA，PR 模式明确标出共同祖先。
+- 随 VS Code 界面语言提供简体中文说明和命令。
 
+这些颜色设置只作用于本扩展的侧栏。
 
-## Install
+## 使用
 
-Search **Git Branch Diff** in the Extensions view, or run:
+1. 在 VS Code 中打开 Git 仓库，进入活动栏的 **Branch Diff**。
+2. 使用视图右上角的“选择基准（左侧）”和“选择比较对象（右侧）”按钮，在 VS Code 原生选择器中选择版本。
+3. 点击文件打开原生 Diff。左侧为基准，右侧为比较对象。工作区一侧使用实际文件，可直接编辑；行数统计以保存到磁盘的内容为准。
+4. 在目录行上悬停可查看目录统计，点击目录可展开或折叠。
+5. 文件行悬停时显示“打开工作区文件”按钮，右键菜单提供打开到侧边、复制路径和在资源管理器中显示等操作。
+6. 暂存、提交或保存文件后自动刷新，也可点击视图右上角的刷新按钮。
+7. 对不关心的文件或目录右键选择 **“本次比较中排除”**。目录会连同所有子目录一起排除，文件数和行数统计按剩余文件重新计算。右键或视图更多菜单中的 **“恢复本次排除项”** 可恢复当前仓库的所有排除项。
 
-```
-ext install firdaushatta.git-branch-diff
-```
+排除仅在本次比较中生效：普通刷新会保留，切换比较对象或比较方式、交换两侧或重新加载窗口后清空。不同仓库互不影响。
 
-See [Installation](#installation) below to build from source or a `.vsix`.
+视图右上角的更多菜单提供常用比较：
 
-## Requirements
-
-- VS Code `1.85.0` or newer
-- `git` available on your `PATH`
-
-## Features
-
-- **Changed Files sidebar** — an Activity Bar view listing every file that differs between a source and target, with colored A / M / D / R status badges (matching VS Code's Source Control view), per-file `+/−` line counts, a compact folder tree, and a changed-file count badge.
-- **Pick both sides** — compare any **source** against any **target**. Each side can be a branch, a **remote branch**, a **tag**, an arbitrary **commit / ref** (e.g. `HEAD~3`), or the **Working Tree** (uncommitted changes) as the source.
-- **Swap** source ↔ target with one click.
-- **Native diff editor** — click any file to open VS Code's side-by-side diff. When the source is the Working Tree, the diff opens against the live, editable file.
-- **Merge-base (3-dot) comparison** by default, so you see only the changes introduced on the source (the same set GitHub shows in a PR). Toggle `branchDiff.useMergeBase` off for a direct 2-dot comparison against the target tip.
-- **Source and target are remembered** per workspace.
-
-## Usage
-
-1. Open a git repository folder in VS Code.
-2. Click the **Branch Diff** icon in the Activity Bar.
-3. Run **Select Target Branch** (the `git-compare` icon in the view title) and pick a branch, tag, remote, or enter any ref.
-4. Optionally run **Select Source Branch** (the `git-branch` icon) to compare from another branch, a ref, or the **Working Tree**.
-5. Use **Swap** (the `arrow-swap` icon) to flip the two sides.
-6. Browse the changed files; click one to open its diff. Use **Refresh** after committing.
-7. To edit a file, hover its row and click **Open File** (the `go-to-file` icon), or right-click → **Open File** — this opens the real, editable file on disk. (When comparing two committed branches the diff itself is read-only; the Working Tree source opens against the live file.)
-8. While reading a diff, **right-click a line** for line actions: **Open File at This Line** (jump into the editable file at that line), **Copy Line Reference** (`path:line`, or `path:start-end` for a selection), and **Copy Line** (the line's text).
-9. Right-click any file (or folder) row for more actions: **Open to the Side**, **Copy Path**, **Copy Relative Path**, and **Reveal in Explorer**.
-
-## Multiple repositories
-
-If your workspace has more than one git repository (multi-root folders or nested repos — the same set VS Code's Source Control shows), each appears as its own header in the tree. Every repo keeps an **independent** source/target and is compared separately. Right-click a repo header to **Select Source / Select Target / Swap / Refresh** for just that repo; the toolbar buttons ask which repo when several are present. A single-repo workspace shows the file list flat, with no header.
-
-## Settings
-
-| Setting | Default | Description |
+| 命令 | 左侧 | 右侧 |
 | --- | --- | --- |
-| `branchDiff.useMergeBase` | `true` | Compare against the merge-base (3-dot). Disable to compare against the target branch tip (2-dot). |
-| `branchDiff.groupByFolder` | `true` | Show changed files in a collapsible folder tree (single-child folders compacted). Disable for a flat list. |
-| `branchDiff.includeUntracked` | `true` | When the source is the Working Tree, include untracked files as added. |
+| 查看已暂存的更改 | HEAD | 暂存区 |
+| 查看未暂存的更改 | 暂存区 | 当前工作区 |
+| 查看全部未提交的更改 | HEAD | 当前工作区 |
 
-## Installation
+要比较不同分支的历史提交，分别在左右选择器中选择分支，再选择 **“选择历史提交…”**。提交列表只展示从所选分支可达的历史，选择结果固定到 SHA；**“使用最新提交”** 则持续跟随该分支。无需切换当前分支。远程分支的提交需要已 fetch 到本地。
 
-Install from the [Marketplace](https://marketplace.visualstudio.com/items?itemName=firdaushatta.git-branch-diff), or build a `.vsix` locally:
+通过视图右上角更多菜单中的 **“比较方式…”** 选择：
+
+- **直接比较两个版本**：左侧选中的版本 → 右侧选中的版本，适合精确比较两个 SHA。
+- **从共同祖先比较（PR）**：两侧提交的共同祖先 → 右侧提交，适合查看右侧分支引入的改动。若没有共同祖先，会提示切换为直接比较。工作区和暂存区始终直接比较。
+
+默认直接比较。顶部文字显示当前实际使用的方式和提交；悬停可查看所选分支、完整 SHA 和实际比较起点。原生 Diff 编辑器的左侧标题也会标明共同祖先。
+
+多仓库工作区中，每个仓库都有独立的版本选择和比较方式，按工作区保存。现有 `useMergeBase` 设置继续作为尚未通过菜单选择方式的仓库的默认值。
+
+## 安装
+
+需要 VS Code 1.85.0 或更新版本，以及 PATH 中可用的 Git。
+
+本地版扩展 ID 为 `local.git-branch-diff-local`，与上游版本独立。通过扩展视图的 **从 VSIX 安装…** 选择生成的安装包，或运行：
 
 ```bash
-npm install
-npm run package
-npx @vscode/vsce package                # produces git-branch-diff-<version>.vsix
-code --install-extension git-branch-diff-*.vsix
+code --install-extension git-branch-diff-local-0.3.0.vsix
 ```
 
-## Development
+## 配置
+
+| 配置项 | 默认值 | 说明 |
+| --- | --- | --- |
+| `branchDiffLocal.useMergeBase` | `false` | 两个提交的默认比较方式。通过菜单选定方式后，该仓库使用菜单中的选择。 |
+| `branchDiffLocal.groupByFolder` | `true` | 按可折叠目录分组，并压缩只有单个子目录的目录链。关闭后显示完整相对路径列表。 |
+| `branchDiffLocal.includeUntracked` | `true` | 比较中包含工作区时，纳入未跟踪且未被忽略的文件。 |
+
+二进制文件显示文件数量，不计入文本行数。存在合并冲突的文件会提示通过源代码管理处理。
+
+## 开发与构建
 
 ```bash
-npm install
-npm run compile     # or: npm run watch
-npm run check-types # type-check without emitting
-npm test            # run unit tests
+npm ci
+npm run compile
+npm run check-types
+npm test
+npx @vscode/vsce package --no-dependencies
 ```
 
-Press **F5** to launch the Extension Development Host.
+按 F5 启动扩展开发宿主。测试使用临时 Git 仓库，覆盖双向比较、暂存内容、重命名、提交分页及目录汇总等行为。
 
-Maintainers: see [PUBLISHING.md](PUBLISHING.md) for Marketplace release steps.
+文件列表使用 Webview 实现独立的文字颜色和目录悬停统计；视图工具栏、标题、Diff 编辑器、版本选择器与右键菜单使用 VS Code API。文件图标从已安装的文件图标主题中读取，主题变化后自动更新。
 
-## Support
+## 许可
 
-If this extension is useful to you, you can support its development:
+[MIT](LICENSE) © Firdaus Hatta。保留上游项目的作者和许可信息。
 
-<a href="https://buymeacoffee.com/firdaushatta">☕ Buy Me a Coffee</a>
-
-## License
-
-[MIT](LICENSE) © Firdaus Hatta
+官方 [Codicons](https://github.com/microsoft/vscode-codicons) 字体使用 CC BY 4.0，代码使用 MIT；Microsoft 的 [jsonc-parser](https://github.com/microsoft/node-jsonc-parser) 使用 MIT。依赖许可随安装包放在 `dist/licenses/` 中。

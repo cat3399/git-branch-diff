@@ -2,10 +2,15 @@ import * as vscode from "vscode";
 import { getRepoRoot } from "./git";
 
 /** Minimal shape of the built-in Git extension API we rely on. */
+interface GitRepositoryLike {
+  rootUri: vscode.Uri;
+  state: { onDidChange: vscode.Event<void> };
+}
+
 interface GitApiLike {
-  repositories: { rootUri: vscode.Uri }[];
-  onDidOpenRepository?: vscode.Event<unknown>;
-  onDidCloseRepository?: vscode.Event<unknown>;
+  repositories: GitRepositoryLike[];
+  onDidOpenRepository?: vscode.Event<GitRepositoryLike>;
+  onDidCloseRepository?: vscode.Event<GitRepositoryLike>;
 }
 
 function unique(values: string[]): string[] {
@@ -56,9 +61,12 @@ export async function discoverRepos(): Promise<string[]> {
  */
 export function onDidChangeRepos(callback: () => void): vscode.Disposable {
   const disposables: vscode.Disposable[] = [];
+  const repoListeners = new Map<string, vscode.Disposable>();
   let timer: ReturnType<typeof setTimeout> | undefined;
+  let disposed = false;
 
   const fire = () => {
+    if (disposed) return;
     if (timer) {
       clearTimeout(timer);
     }
@@ -69,16 +77,33 @@ export function onDidChangeRepos(callback: () => void): vscode.Disposable {
 
   // Subscribe to Git-extension repo events when the API is available.
   void getGitApi().then((api) => {
-    api?.onDidOpenRepository?.(fire, undefined, disposables);
-    api?.onDidCloseRepository?.(fire, undefined, disposables);
+    if (!api || disposed) return;
+    const watch = (repo: GitRepositoryLike) => {
+      const root = repo.rootUri.toString();
+      repoListeners.get(root)?.dispose();
+      repoListeners.set(root, repo.state.onDidChange(fire));
+    };
+    for (const repo of api.repositories) watch(repo);
+    api.onDidOpenRepository?.((repo) => {
+      watch(repo);
+      fire();
+    }, undefined, disposables);
+    api.onDidCloseRepository?.((repo) => {
+      const root = repo.rootUri.toString();
+      repoListeners.get(root)?.dispose();
+      repoListeners.delete(root);
+      fire();
+    }, undefined, disposables);
   });
 
   return new vscode.Disposable(() => {
+    disposed = true;
     if (timer) {
       clearTimeout(timer);
     }
     for (const d of disposables) {
       d.dispose();
     }
+    for (const listener of repoListeners.values()) listener.dispose();
   });
 }

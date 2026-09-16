@@ -1,7 +1,7 @@
 import * as vscode from "vscode";
-import { showFileAtRef } from "./git";
+import { INDEX_REF, showFileAtRef } from "./git";
 
-export const BRANCH_DIFF_SCHEME = "branchdiff";
+export const BRANCH_DIFF_SCHEME = "branchdiff-local";
 
 interface DiffUriParams {
   repoRoot: string;
@@ -25,8 +25,15 @@ export function makeDiffUri(params: DiffUriParams): vscode.Uri {
 }
 
 export class BranchDiffContentProvider
-  implements vscode.TextDocumentContentProvider
+  implements vscode.TextDocumentContentProvider, vscode.Disposable
 {
+  private readonly changed = new vscode.EventEmitter<vscode.Uri>();
+  readonly onDidChange = this.changed.event;
+  private readonly indexDocuments = new Map<string, vscode.Uri>();
+  private readonly closed = vscode.workspace.onDidCloseTextDocument((document) => {
+    this.indexDocuments.delete(document.uri.toString());
+  });
+
   async provideTextDocumentContent(uri: vscode.Uri): Promise<string> {
     let params: DiffUriParams;
     try {
@@ -37,6 +44,17 @@ export class BranchDiffContentProvider
     if (!params.ref || !params.path || !params.repoRoot) {
       return "";
     }
+    if (params.ref === INDEX_REF) this.indexDocuments.set(uri.toString(), uri);
     return showFileAtRef(params.repoRoot, params.ref, params.path);
+  }
+
+  refresh(): void {
+    for (const uri of this.indexDocuments.values()) this.changed.fire(uri);
+  }
+
+  dispose(): void {
+    this.closed.dispose();
+    this.changed.dispose();
+    this.indexDocuments.clear();
   }
 }

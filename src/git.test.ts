@@ -87,6 +87,11 @@ test("parses numstat for normal files", () => {
   });
 });
 
+test("preserves tabs inside a numstat file path", () => {
+  const stats = parseNumstat(z("2\t1\tdirectory/a\tb.txt", ""));
+  assert.equal(stats.get("directory/a\tb.txt")?.additions, 2);
+});
+
 test("parses numstat rename records keyed by the new path", () => {
   // `0\t0\t` then old, then new — the empty inline path marks a rename.
   const out = z("0\t0\t", "oldname.txt", "newname.txt", "");

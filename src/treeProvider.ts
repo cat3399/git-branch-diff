@@ -1,298 +1,53 @@
 import * as vscode from "vscode";
 import * as path from "path";
-import {
-  FileChange,
-  ChangeStatus,
-  getCurrentBranch,
-  getMergeBase,
-  listChanges,
-  listWorkingChanges,
-} from "./git";
+import { compareRefs, FileChange, getCurrentBranch, HEAD_REF, isLiveRef, NoMergeBaseError } from "./git";
+import { buildFileTree, ChangeTotals, FileTreeEntry } from "./fileTree";
+import { refLabel, RefSelection } from "./refPicker";
 
-const TARGET_KEY = "branchDiff.target";
-const SOURCE_KEY = "branchDiff.source";
+const TARGET_KEY = "branchDiffLocal.target";
+const SOURCE_KEY = "branchDiffLocal.source";
+const MODE_KEY = "branchDiffLocal.useMergeBase";
 
-/** Sentinel source ref meaning "the currently checked-out branch". */
-export const HEAD_SOURCE = "HEAD";
-
-/** Sentinel source meaning "the working tree" (uncommitted changes). */
-export const WORKTREE_SOURCE = "~worktree";
-
-const STATUS_LABEL: Record<ChangeStatus, string> = {
-  A: "Added",
-  M: "Modified",
-  D: "Deleted",
-  R: "Renamed",
-  C: "Copied",
-  T: "Type changed",
-  U: "Unmerged",
-};
-
-/** Theme color used for each status's letter badge, mirroring VS Code's git view. */
-const STATUS_COLOR: Record<ChangeStatus, string> = {
-  A: "gitDecoration.addedResourceForeground",
-  M: "gitDecoration.modifiedResourceForeground",
-  D: "gitDecoration.deletedResourceForeground",
-  R: "gitDecoration.renamedResourceForeground",
-  C: "gitDecoration.renamedResourceForeground",
-  T: "gitDecoration.modifiedResourceForeground",
-  U: "gitDecoration.conflictingResourceForeground",
-};
-
-/**
- * Custom scheme for a changed-file item's resourceUri. Using a dedicated scheme
- * lets the FileDecorationProvider add status badges to our view WITHOUT leaking
- * those decorations onto the same files in the Explorer or editor tabs. The path
- * keeps the real filename so the file-icon theme still renders the correct icon.
- */
-export const STATUS_SCHEME = "branchdiff-status";
-
-/** Short per-file stats string, e.g. "+12 −3", "binary", or "" when unknown. */
-function formatStats(change: FileChange): string {
-  if (change.binary) {
-    return "binary";
-  }
-  if (change.additions === undefined && change.deletions === undefined) {
-    return "";
-  }
-  const parts: string[] = [];
-  if (change.additions) {
-    parts.push(`+${change.additions}`);
-  }
-  if (change.deletions) {
-    parts.push(`−${change.deletions}`);
-  }
-  return parts.join(" ");
-}
-
-function makeStatusUri(change: FileChange): vscode.Uri {
-  return vscode.Uri.from({
-    scheme: STATUS_SCHEME,
-    path: "/" + change.path,
-    query: change.status,
-  });
-}
-
-/** Payload carried by a file item and handed to the openChange command. */
 export interface ChangePayload {
   repoRoot: string;
-  /** Diff base ref (merge-base sha or target branch name) — the "before" side. */
   base: string;
-  /** Source ref (branch name or HEAD) — the "after" side. */
   source: string;
-  /** Human-friendly source name for diff titles. */
   sourceLabel: string;
-  /** Human-friendly target (base) name for diff titles. */
   targetLabel: string;
   change: FileChange;
 }
 
-/** Shared context passed to the tree builders. */
-interface BuildContext {
-  repoRoot: string;
-  base: string;
-  source: string;
-  sourceLabel: string;
-  targetLabel: string;
+const emptyTotals = (): ChangeTotals => ({
+  files: 0, additions: 0, deletions: 0, binaries: 0,
+});
+
+export function formatSummary(totals: ChangeTotals): string {
+  if (!totals.files) return vscode.l10n.t("No changes");
+  const files = vscode.l10n.t("{0} files changed", totals.files);
+  const binaries = totals.binaries
+    ? " · " + vscode.l10n.t("{0} binary files", totals.binaries)
+    : "";
+  return `${files}${binaries}`;
 }
 
-/** A file-tree node — either a folder or a changed file. */
-export type BranchDiffNode = FolderItem | ChangeItem;
-
-/** Any node the provider can render, including the top-level repo header. */
-export type TreeNode = RepoItem | BranchDiffNode;
-
-/** Top-level header shown per repository when the workspace has several. */
-export class RepoItem extends vscode.TreeItem {
-  constructor(readonly session: RepoSession) {
-    super(
-      path.basename(session.repoRoot) || session.repoRoot,
-      vscode.TreeItemCollapsibleState.Expanded
-    );
-    this.id = session.repoRoot;
-    this.contextValue = "branchDiffRepo";
-    this.iconPath = new vscode.ThemeIcon("repo");
-    this.tooltip = session.repoRoot;
-    this.description = session.target
-      ? `${session.sourceLabel} → ${session.target}` +
-        (session.fileCount ? `  (${session.fileCount})` : "")
-      : "No target selected";
-  }
-}
-
-export class FolderItem extends vscode.TreeItem {
-  children: BranchDiffNode[] = [];
-
-  constructor(
-    /** Display segment (may span several levels when folders are compacted). */
-    label: string,
-    /** Full folder path relative to the repo root. */
-    readonly relPath: string,
-    readonly repoRoot: string
-  ) {
-    super(label, vscode.TreeItemCollapsibleState.Expanded);
-    this.resourceUri = vscode.Uri.file(path.join(repoRoot, relPath));
-    this.contextValue = "branchDiffFolder";
-    // Let VS Code render the themed folder icon based on resourceUri.
-    this.iconPath = vscode.ThemeIcon.Folder;
-  }
-}
-
-export class ChangeItem extends vscode.TreeItem {
-  readonly payload: ChangePayload;
-
-  constructor(
-    ctx: BuildContext,
-    change: FileChange,
-    /** Show the directory as the item description (used in flat mode). */
-    showDir: boolean
-  ) {
-    super(path.basename(change.path), vscode.TreeItemCollapsibleState.None);
-    this.payload = {
-      repoRoot: ctx.repoRoot,
-      base: ctx.base,
-      source: ctx.source,
-      sourceLabel: ctx.sourceLabel,
-      targetLabel: ctx.targetLabel,
-      change,
-    };
-
-    // Description shows the +/- line counts; in flat mode the directory is
-    // prepended since the tree hierarchy isn't there to convey it.
-    const dir = path.dirname(change.path);
-    const stats = formatStats(change);
-    if (showDir && dir !== ".") {
-      this.description = stats ? `${dir} · ${stats}` : dir;
-    } else {
-      this.description = stats || undefined;
-    }
-
-    // A custom-scheme URI drives both the file-type icon (via the filename in
-    // the path) and the status badge (via the FileDecorationProvider).
-    this.resourceUri = makeStatusUri(change);
-
-    const statusName = STATUS_LABEL[change.status] ?? change.status;
-    this.tooltip =
-      change.status === "R" && change.oldPath
-        ? `${statusName}: ${change.oldPath} → ${change.path}`
-        : `${statusName}: ${change.path}`;
-
-    this.contextValue = "branchDiffChange";
-
-    this.command = {
-      command: "branchDiff.openChange",
-      title: "Open Change",
-      arguments: [this.payload],
-    };
-  }
-}
-
-/**
- * Adds the colored status letter (M / A / D / R …) to the right of each file,
- * matching VS Code's Source Control view. Only decorates our custom scheme, so
- * the same files are untouched elsewhere in the workbench.
- */
-export class StatusDecorationProvider
-  implements vscode.FileDecorationProvider
-{
-  provideFileDecoration(
-    uri: vscode.Uri
-  ): vscode.ProviderResult<vscode.FileDecoration> {
-    if (uri.scheme !== STATUS_SCHEME) {
-      return undefined;
-    }
-    const status = uri.query as ChangeStatus;
-    return {
-      badge: status,
-      color: new vscode.ThemeColor(
-        STATUS_COLOR[status] ?? "gitDecoration.modifiedResourceForeground"
-      ),
-      tooltip: STATUS_LABEL[status] ?? status,
-    };
-  }
-}
-
-/** Mutable intermediate folder used while building the tree from flat paths. */
-interface RawFolder {
-  name: string;
-  path: string;
-  folders: Map<string, RawFolder>;
-  files: FileChange[];
-}
-
-function newRawFolder(name: string, folderPath: string): RawFolder {
-  return { name, path: folderPath, folders: new Map(), files: [] };
-}
-
-/** Insert a change into the raw folder tree at its directory path. */
-function insertChange(root: RawFolder, change: FileChange): void {
-  const dir = path.dirname(change.path);
-  if (dir === ".") {
-    root.files.push(change);
-    return;
-  }
-  let cur = root;
-  let acc = "";
-  for (const segment of dir.split("/")) {
-    acc = acc ? `${acc}/${segment}` : segment;
-    let next = cur.folders.get(segment);
-    if (!next) {
-      next = newRawFolder(segment, acc);
-      cur.folders.set(segment, next);
-    }
-    cur = next;
-  }
-  cur.files.push(change);
-}
-
-/**
- * Collapse a chain of single-child folders (e.g. `src/main/java`) into one node,
- * mirroring VS Code's "compact folders" explorer behavior.
- */
-function compactAndConvert(raw: RawFolder, ctx: BuildContext): FolderItem {
-  let label = raw.name;
-  let cur = raw;
-  while (cur.folders.size === 1 && cur.files.length === 0) {
-    const only = cur.folders.values().next().value as RawFolder;
-    label = `${label}/${only.name}`;
-    cur = only;
-  }
-  const item = new FolderItem(label, cur.path, ctx.repoRoot);
-  item.children = buildChildren(cur, ctx);
-  return item;
-}
-
-/** Folders first (alphabetical), then files (alphabetical by name). */
-function buildChildren(raw: RawFolder, ctx: BuildContext): BranchDiffNode[] {
-  const folders = [...raw.folders.values()]
-    .map((f) => compactAndConvert(f, ctx))
-    .sort((a, b) => String(a.label).localeCompare(String(b.label)));
-
-  const files = raw.files
-    .map((change) => new ChangeItem(ctx, change, false))
-    .sort((a, b) => String(a.label).localeCompare(String(b.label)));
-
-  return [...folders, ...files];
-}
-
-/**
- * One repository's comparison: its remembered source/target, computed change
- * tree, and stats. State is persisted per repo under `<key>:<repoRoot>`.
- */
+/** One repository's selected endpoints and the latest completed comparison. */
 export class RepoSession {
-  roots: BranchDiffNode[] = [];
-  fileCount = 0;
-  additions = 0;
-  deletions = 0;
-  summary = "";
-  private error: string | undefined;
+  roots: FileTreeEntry[] = [];
+  totals = emptyTotals();
+  currentBranch = "";
+  error: string | undefined;
+  loading = false;
+  private generation = 0;
+  private comparison: {
+    target: string; base: string; source: string; mergeBase?: string;
+    targetLabel: string; sourceLabel: string; selectedTargetLabel: string;
+  } | undefined;
+  private readonly changes = new Map<string, FileChange>();
+  private readonly excludedPaths = new Map<string, FileTreeEntry["kind"]>();
 
   constructor(
     readonly repoRoot: string,
-    /** Name of the checked-out branch, used to label the default HEAD source. */
-    readonly currentBranch: string,
     private readonly context: vscode.ExtensionContext,
-    /** Called after each refresh so the coordinator can redraw the tree. */
     private readonly onChanged: () => void
   ) {}
 
@@ -300,272 +55,270 @@ export class RepoSession {
     return `${base}:${this.repoRoot}`;
   }
 
-  get target(): string | undefined {
-    return this.context.workspaceState.get<string>(this.key(TARGET_KEY));
+  private readSelection(key: string): RefSelection | undefined {
+    const saved = this.context.workspaceState.get<string | RefSelection>(this.key(key));
+    return typeof saved === "string" ? { ref: saved } : saved;
   }
 
-  /** Source ref; defaults to HEAD (the checked-out branch). */
-  get source(): string {
-    return (
-      this.context.workspaceState.get<string>(this.key(SOURCE_KEY)) ??
-      HEAD_SOURCE
-    );
+  get target(): RefSelection | undefined {
+    return this.readSelection(TARGET_KEY);
   }
 
-  /** Display name for the current source ref. */
+  get source(): RefSelection {
+    return this.readSelection(SOURCE_KEY) ?? { ref: HEAD_REF };
+  }
+
   get sourceLabel(): string {
-    const s = this.source;
-    if (s === WORKTREE_SOURCE) {
-      return "Working Tree";
-    }
-    return s === HEAD_SOURCE ? this.currentBranch || "current" : s;
+    const source = this.source;
+    return refLabel(source.ref, this.currentBranch, source.branch);
   }
 
-  async setTarget(target: string): Promise<void> {
+  get targetLabel(): string {
+    const target = this.target;
+    return target
+      ? refLabel(target.ref, this.currentBranch, target.branch)
+      : vscode.l10n.t("Select base");
+  }
+
+  get useMergeBase(): boolean {
+    return this.context.workspaceState.get<boolean>(this.key(MODE_KEY))
+      ?? vscode.workspace.getConfiguration("branchDiffLocal", vscode.Uri.file(this.repoRoot)).get<boolean>("useMergeBase", false);
+  }
+
+  get comparisonLabel(): string {
+    if (this.loading || !this.comparison) return "";
+    const { base, source, mergeBase } = this.comparison;
+    const left = mergeBase ? vscode.l10n.t("Merge base {0}", base.slice(0, 8)) : refLabel(base);
+    return `${mergeBase ? "PR" : vscode.l10n.t("Direct")} · ${left} → ${refLabel(source)}`;
+  }
+
+  get comparisonDetails(): string {
+    if (this.loading || !this.comparison) return "";
+    const result = this.comparison;
+    return [
+      vscode.l10n.t("Selected base: {0}", `${result.selectedTargetLabel} (${isLiveRef(result.target) ? refLabel(result.target) : result.target})`),
+      vscode.l10n.t("Selected comparison: {0}", `${result.sourceLabel} (${isLiveRef(result.source) ? refLabel(result.source) : result.source})`),
+      vscode.l10n.t("Actual base: {0}", isLiveRef(result.base) ? refLabel(result.base) : result.base),
+    ].join("\n");
+  }
+
+  get summary(): string {
+    if (!this.target) return "";
+    const excluded = this.changes.size - this.totals.files;
+    if (!excluded) return formatSummary(this.totals);
+    if (!this.totals.files) return vscode.l10n.t("All {0} changed files excluded", excluded);
+    return formatSummary(this.totals) + " · " + vscode.l10n.t("{0} files excluded", excluded);
+  }
+
+  get hasExclusions(): boolean {
+    return this.excludedPaths.size > 0;
+  }
+
+  excludeEntry(entry: FileTreeEntry): void {
+    if (this.loading) return;
+    this.excludedPaths.set(entry.path, entry.kind);
+    this.rebuildTree();
+    this.onChanged();
+  }
+
+  restoreExcluded(): void {
+    this.excludedPaths.clear();
+    this.rebuildTree();
+    this.onChanged();
+  }
+
+  private rebuildTree(): void {
+    const visible = [...this.changes.values()].filter((change) => {
+      for (const [excluded, kind] of this.excludedPaths) {
+        if (change.path === excluded || (kind === "folder" && change.path.startsWith(excluded + "/"))) return false;
+      }
+      return true;
+    });
+    const config = vscode.workspace.getConfiguration("branchDiffLocal", vscode.Uri.file(this.repoRoot));
+    const tree = buildFileTree(visible, config.get<boolean>("groupByFolder", true));
+    this.roots = tree.roots;
+    this.totals = tree.totals;
+  }
+
+  async setTarget(target: RefSelection): Promise<void> {
+    if (target.ref !== this.target?.ref) this.excludedPaths.clear();
     await this.context.workspaceState.update(this.key(TARGET_KEY), target);
     await this.refresh();
   }
 
-  async setSource(source: string): Promise<void> {
+  async setSource(source: RefSelection): Promise<void> {
+    if (source.ref !== this.source.ref) this.excludedPaths.clear();
     await this.context.workspaceState.update(this.key(SOURCE_KEY), source);
     await this.refresh();
   }
 
-  /** Set both source and target together (one refresh) — used by swap. */
-  async setComparison(source: string, target: string): Promise<void> {
-    await this.context.workspaceState.update(this.key(SOURCE_KEY), source);
-    await this.context.workspaceState.update(this.key(TARGET_KEY), target);
+  async setComparison(source: RefSelection, target: RefSelection): Promise<void> {
+    if (source.ref !== this.source.ref || target.ref !== this.target?.ref) this.excludedPaths.clear();
+    await Promise.all([
+      this.context.workspaceState.update(this.key(SOURCE_KEY), source),
+      this.context.workspaceState.update(this.key(TARGET_KEY), target),
+    ]);
     await this.refresh();
   }
 
-  private reset(): void {
-    this.roots = [];
-    this.fileCount = 0;
-    this.additions = 0;
-    this.deletions = 0;
-    this.summary = "";
+  async setComparisonMode(useMergeBase: boolean): Promise<void> {
+    if (useMergeBase !== this.useMergeBase) this.excludedPaths.clear();
+    await this.context.workspaceState.update(this.key(MODE_KEY), useMergeBase);
+    await this.refresh();
+  }
+
+  getChange(filePath: string): ChangePayload | undefined {
+    const change = this.changes.get(filePath);
+    if (this.loading || !change || !this.comparison) return undefined;
+    return { repoRoot: this.repoRoot, ...this.comparison, change };
+  }
+
+  getEntry(id: string): FileTreeEntry | undefined {
+    const search = (entries: FileTreeEntry[]): FileTreeEntry | undefined => {
+      for (const entry of entries) {
+        if (entry.id === id) return entry;
+        if (entry.kind === "folder") {
+          const found = search(entry.children);
+          if (found) return found;
+        }
+      }
+      return undefined;
+    };
+    return search(this.roots);
   }
 
   async refresh(): Promise<void> {
+    const generation = ++this.generation;
     const target = this.target;
     this.error = undefined;
-
     if (!target) {
-      this.reset();
+      this.roots = [];
+      this.totals = emptyTotals();
+      this.changes.clear();
+      this.comparison = undefined;
       this.onChanged();
       return;
     }
 
-    try {
-      const config = vscode.workspace.getConfiguration("branchDiff");
-      const useMergeBase = config.get<boolean>("useMergeBase", true);
-      const groupByFolder = config.get<boolean>("groupByFolder", true);
-      const includeUntracked = config.get<boolean>("includeUntracked", true);
-
-      const source = this.source;
-      const isWorktree = source === WORKTREE_SOURCE;
-      // The working tree sits on HEAD, so use HEAD for the merge-base.
-      const gitSource = isWorktree ? HEAD_SOURCE : source;
-
-      const base = useMergeBase
-        ? await getMergeBase(this.repoRoot, gitSource, target)
-        : target;
-
-      const changes = isWorktree
-        ? await listWorkingChanges(this.repoRoot, base, includeUntracked)
-        : await listChanges(this.repoRoot, base, gitSource);
-
-      this.fileCount = changes.length;
-      this.additions = changes.reduce((n, c) => n + (c.additions ?? 0), 0);
-      this.deletions = changes.reduce((n, c) => n + (c.deletions ?? 0), 0);
-      this.summary = summarize(changes);
-
-      const ctx: BuildContext = {
-        repoRoot: this.repoRoot,
-        base,
-        source,
-        sourceLabel: this.sourceLabel,
-        targetLabel: target,
-      };
-
-      if (groupByFolder) {
-        const root = newRawFolder("", "");
-        for (const change of changes) {
-          insertChange(root, change);
-        }
-        this.roots = buildChildren(root, ctx);
-      } else {
-        this.roots = changes.map((change) => new ChangeItem(ctx, change, true));
-      }
-    } catch (err) {
-      this.error = err instanceof Error ? err.message : String(err);
-      this.reset();
-      vscode.window.showErrorMessage(
-        `Branch Diff (${path.basename(this.repoRoot)}): ${this.error}`
-      );
-    }
-
+    const source = this.source;
+    this.loading = true;
     this.onChanged();
+    try {
+      const config = vscode.workspace.getConfiguration("branchDiffLocal", vscode.Uri.file(this.repoRoot));
+      const [currentBranch, result] = await Promise.all([
+        getCurrentBranch(this.repoRoot).catch(() => ""),
+        compareRefs(
+          this.repoRoot,
+          target.ref,
+          source.ref,
+          this.useMergeBase,
+          config.get<boolean>("includeUntracked", true)
+        ),
+      ]);
+      // A slower, superseded comparison must not replace the user's new selection.
+      if (generation !== this.generation) return;
+      this.currentBranch = currentBranch;
+      const selectedLabel = (selection: RefSelection, sha: string) => {
+        const label = refLabel(selection.ref, currentBranch, selection.branch);
+        return isLiveRef(sha) || sha.startsWith(selection.ref) ? label : `${label} · ${sha.slice(0, 8)}`;
+      };
+      const selectedTargetLabel = selectedLabel(target, result.target);
+      this.comparison = {
+        target: result.target,
+        base: result.base,
+        source: result.source,
+        mergeBase: result.mergeBase,
+        selectedTargetLabel,
+        targetLabel: result.mergeBase ? vscode.l10n.t("Merge base {0}", result.base.slice(0, 8)) : selectedTargetLabel,
+        sourceLabel: selectedLabel(source, result.source),
+      };
+      this.changes.clear();
+      for (const change of result.changes) this.changes.set(change.path, change);
+      this.rebuildTree();
+    } catch (error) {
+      if (generation !== this.generation) return;
+      this.error = error instanceof NoMergeBaseError
+        ? vscode.l10n.t("These commits have no common ancestor. Use direct comparison to compare them.")
+        : vscode.l10n.t(
+        "Could not compare: {0}",
+        error instanceof Error ? error.message : String(error)
+      );
+      this.roots = [];
+      this.totals = emptyTotals();
+      this.changes.clear();
+      this.comparison = undefined;
+    } finally {
+      if (generation === this.generation) {
+        this.loading = false;
+        this.onChanged();
+      }
+    }
   }
 }
 
-/**
- * Tree data provider coordinating one {@link RepoSession} per repository. With
- * a single repo the file tree is shown flat; with several, each repo gets a
- * collapsible {@link RepoItem} header.
- */
-export class ChangedFilesProvider implements vscode.TreeDataProvider<TreeNode> {
-  private readonly _onDidChangeTreeData = new vscode.EventEmitter<
-    TreeNode | undefined | void
-  >();
-  readonly onDidChangeTreeData = this._onDidChangeTreeData.event;
-
+/** Repository coordination shared by the file tree and endpoint commands. */
+export class ChangedFilesProvider implements vscode.Disposable {
+  private readonly changed = new vscode.EventEmitter<void>();
+  readonly onDidChangeTreeData = this.changed.event;
   private readonly sessions = new Map<string, RepoSession>();
 
   constructor(private readonly context: vscode.ExtensionContext) {}
 
-  /** Migrate a pre-multi-repo (unkeyed) selection onto `repoRoot`, once. */
+  /** Keep comparisons saved by versions before per-repository state. */
   async migrateLegacy(repoRoot: string): Promise<void> {
     const state = this.context.workspaceState;
-    const legacyTarget = state.get<string>(TARGET_KEY);
-    if (legacyTarget === undefined) {
-      return;
-    }
+    const target = state.get<string>(TARGET_KEY);
+    if (target === undefined) return;
     const perRepoTarget = `${TARGET_KEY}:${repoRoot}`;
     if (state.get<string>(perRepoTarget) === undefined) {
-      await state.update(perRepoTarget, legacyTarget);
-      const legacySource = state.get<string>(SOURCE_KEY);
-      if (legacySource !== undefined) {
-        await state.update(`${SOURCE_KEY}:${repoRoot}`, legacySource);
-      }
+      await state.update(perRepoTarget, target);
+      const source = state.get<string>(SOURCE_KEY);
+      if (source !== undefined) await state.update(`${SOURCE_KEY}:${repoRoot}`, source);
     }
     await state.update(TARGET_KEY, undefined);
     await state.update(SOURCE_KEY, undefined);
   }
 
-  /** Reconcile the session map with the discovered repository roots. */
   async setRepos(roots: string[]): Promise<void> {
-    for (const root of [...this.sessions.keys()]) {
-      if (!roots.includes(root)) {
-        this.sessions.delete(root);
-      }
+    for (const root of this.sessions.keys()) {
+      if (!roots.includes(root)) this.sessions.delete(root);
     }
     for (const root of roots) {
       if (!this.sessions.has(root)) {
-        const currentBranch = await getCurrentBranch(root).catch(() => "");
-        this.sessions.set(
-          root,
-          new RepoSession(root, currentBranch, this.context, () =>
-            this._onDidChangeTreeData.fire()
-          )
-        );
+        this.sessions.set(root, new RepoSession(root, this.context, () => this.changed.fire()));
       }
     }
     await this.refreshAll();
   }
 
-  get repoCount(): number {
-    return this.sessions.size;
-  }
-
   sessionList(): RepoSession[] {
-    return [...this.sessions.values()].sort((a, b) =>
-      a.repoRoot.localeCompare(b.repoRoot)
-    );
+    return [...this.sessions.values()].sort((a, b) => a.repoRoot.localeCompare(b.repoRoot));
   }
 
   getSession(root: string): RepoSession | undefined {
     return this.sessions.get(root);
   }
 
-  /** Total changed files across all repos. */
   get totalFileCount(): number {
-    let n = 0;
-    for (const s of this.sessions.values()) {
-      n += s.fileCount;
-    }
-    return n;
-  }
-
-  /** Aggregate summary line (per-repo when only one repo is present). */
-  get summary(): string {
-    const sessions = this.sessionList();
-    if (sessions.length <= 1) {
-      return sessions[0]?.summary ?? "";
-    }
-    let files = 0;
-    let add = 0;
-    let del = 0;
-    let anyTarget = false;
-    for (const s of sessions) {
-      files += s.fileCount;
-      add += s.additions;
-      del += s.deletions;
-      anyTarget = anyTarget || Boolean(s.target);
-    }
-    if (!anyTarget) {
-      return "";
-    }
-    if (files === 0) {
-      return `No changes · ${sessions.length} repos`;
-    }
-    const counts: string[] = [];
-    if (add) {
-      counts.push(`+${add}`);
-    }
-    if (del) {
-      counts.push(`−${del}`);
-    }
-    const c = counts.length ? ` · ${counts.join(" ")}` : "";
-    return `${files} file${files === 1 ? "" : "s"} changed${c} · ${sessions.length} repos`;
-  }
-
-  getTreeItem(element: TreeNode): vscode.TreeItem {
-    return element;
-  }
-
-  getChildren(element?: TreeNode): TreeNode[] {
-    if (!element) {
-      const sessions = this.sessionList();
-      if (sessions.length === 1) {
-        return sessions[0].roots;
-      }
-      return sessions.map((s) => new RepoItem(s));
-    }
-    if (element instanceof RepoItem) {
-      return element.session.roots;
-    }
-    if (element instanceof FolderItem) {
-      return element.children;
-    }
-    return [];
+    return this.sessionList().reduce((total, session) => total + session.totals.files, 0);
   }
 
   async refreshAll(): Promise<void> {
-    await Promise.all(this.sessionList().map((s) => s.refresh()));
-    // Redraw even when there are zero sessions.
-    this._onDidChangeTreeData.fire();
+    await Promise.all(this.sessionList().map((session) => session.refresh()));
+    this.changed.fire();
+  }
+
+  dispose(): void {
+    this.changed.dispose();
+    this.sessions.clear();
   }
 }
 
-/** Build a "N files changed · +A −D" summary from the change list. */
-function summarize(changes: FileChange[]): string {
-  if (changes.length === 0) {
-    return "No changes";
-  }
-  let add = 0;
-  let del = 0;
-  for (const c of changes) {
-    add += c.additions ?? 0;
-    del += c.deletions ?? 0;
-  }
-  const files = `${changes.length} file${changes.length === 1 ? "" : "s"} changed`;
-  const counts: string[] = [];
-  if (add) {
-    counts.push(`+${add}`);
-  }
-  if (del) {
-    counts.push(`−${del}`);
-  }
-  return counts.length ? `${files} · ${counts.join(" ")}` : files;
+export interface EntryContext {
+  session: RepoSession;
+  entry: FileTreeEntry;
+}
+
+export function entryUri(context: EntryContext): vscode.Uri {
+  return vscode.Uri.file(path.join(context.session.repoRoot, context.entry.path));
 }
