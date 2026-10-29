@@ -99,6 +99,33 @@ export async function listBranches(root: string): Promise<GitBranch[]> {
   return branches;
 }
 
+/** Prefer the remote's default branch; ambiguous fallbacks need a user choice. */
+export async function getMainlineBranch(root: string, branches: GitBranch[]): Promise<GitBranch | undefined> {
+  const out = await git(root, [
+    "for-each-ref", "--format=%(refname)%00%(symref)", "refs/remotes",
+  ]);
+  const defaults: GitBranch[] = [];
+  for (const row of out.split("\n")) {
+    const [ref, symbolic] = row.split("\0");
+    if (!ref.endsWith("/HEAD") || !symbolic) continue;
+    const branch = branches.find((candidate) => candidate.ref === symbolic);
+    if (!branch) continue;
+    if (ref === "refs/remotes/origin/HEAD") return branch;
+    defaults.push(branch);
+  }
+  if (defaults.length) return defaults.length === 1 ? defaults[0] : undefined;
+
+  const candidates = [
+    branches.filter((branch) => /^refs\/remotes\/origin\/(main|master)$/.test(branch.ref)),
+    branches.filter((branch) => /^refs\/remotes\/[^/]+\/(main|master)$/.test(branch.ref)),
+    branches.filter((branch) => /^refs\/heads\/(main|master)$/.test(branch.ref)),
+  ];
+  for (const group of candidates) {
+    if (group.length) return group.length === 1 ? group[0] : undefined;
+  }
+  return undefined;
+}
+
 /** Page through all reachable commits, including a detached HEAD. */
 export async function listCommits(
   root: string,

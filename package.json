@@ -2,7 +2,7 @@
   "name": "git-branch-diff-local",
   "displayName": "Git Branch Diff (Local)",
   "description": "%extension.description%",
-  "version": "0.3.0",
+  "version": "0.6.0",
   "publisher": "local",
   "license": "MIT",
   "author": {
@@ -79,6 +79,12 @@
       {
         "command": "branchDiffLocal.selectComparisonMode",
         "title": "%command.selectComparisonMode%"
+      },
+      {
+        "command": "branchDiffLocal.toggleDiffLayout",
+        "title": "%command.toggleDiffLayout%",
+        "icon": "$(split-horizontal)",
+        "enablement": "branchDiffLocal.diffActive"
       },
       {
         "command": "branchDiffLocal.openChange",
@@ -169,6 +175,11 @@
           "group": "0_mode@0"
         },
         {
+          "command": "branchDiffLocal.toggleDiffLayout",
+          "when": "view == branchDiffLocal.filesView",
+          "group": "0_mode@1"
+        },
+        {
           "command": "branchDiffLocal.compareStaged",
           "when": "view == branchDiffLocal.filesView",
           "group": "1_compare@0"
@@ -187,6 +198,13 @@
           "command": "branchDiffLocal.restoreExcluded",
           "when": "view == branchDiffLocal.filesView && branchDiffLocal.hasExclusions",
           "group": "2_filter@0"
+        }
+      ],
+      "editor/title": [
+        {
+          "command": "branchDiffLocal.toggleDiffLayout",
+          "when": "isInDiffEditor && branchDiffLocal.diffActive",
+          "group": "navigation@20"
         }
       ],
       "editor/context": [

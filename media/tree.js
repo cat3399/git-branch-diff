@@ -2,12 +2,16 @@
   const vscode = acquireVsCodeApi();
   const saved = vscode.getState() || {};
   const collapsed = new Set(saved.collapsed || []);
-  let selected = saved.selected;
+  const selected = new Set(Array.isArray(saved.selected) ? saved.selected : saved.selected ? [saved.selected] : []);
+  let focused = saved.focused || [...selected][0];
+  let anchor = saved.anchor || focused;
   let model;
   let visibleRows = [];
   const container = document.getElementById("repositories");
   const keyOf = (root, id) => JSON.stringify([root, id]);
-  const persist = () => vscode.setState({ collapsed: [...collapsed], selected });
+  const isMac = navigator.platform.includes("Mac");
+  const toggleModifier = (event) => isMac ? event.metaKey : event.ctrlKey;
+  const persist = () => vscode.setState({ collapsed: [...collapsed], selected: [...selected], focused, anchor });
 
   function icon(name) {
     const names = { arrow: "chevron-right", open: "go-to-file" };
@@ -46,23 +50,49 @@
     vscode.postMessage({ action, repoRoot: repository.root, entryId: entry?.id });
   }
 
-  function selectRow(key, focus = true) {
-    selected = key;
+  function updateSelection(focus = false) {
     for (const row of visibleRows) {
-      const active = row.dataset.key === key;
-      row.classList.toggle("selected", active);
-      row.setAttribute("aria-selected", String(active));
+      const picked = selected.has(row.dataset.key);
+      const active = row.dataset.key === focused;
+      row.classList.toggle("selected", picked);
+      row.setAttribute("aria-selected", String(picked));
       row.tabIndex = active ? 0 : -1;
       if (active && focus) row.focus({ preventScroll: true });
     }
     persist();
   }
 
+  function selectRow(key, { extend = false, toggle = false, focus = true } = {}) {
+    const index = visibleRows.findIndex((row) => row.dataset.key === key);
+    if (index < 0) return;
+    if (extend) {
+      let start = visibleRows.findIndex((row) => row.dataset.key === anchor);
+      if (start < 0) {
+        anchor = focused || key;
+        start = visibleRows.findIndex((row) => row.dataset.key === anchor);
+      }
+      if (start < 0) start = index;
+      if (!toggle) selected.clear();
+      for (const row of visibleRows.slice(Math.min(start, index), Math.max(start, index) + 1)) {
+        selected.add(row.dataset.key);
+      }
+    } else if (toggle) {
+      if (selected.has(key)) selected.delete(key);
+      else selected.add(key);
+      anchor = key;
+    } else {
+      selected.clear();
+      selected.add(key);
+      anchor = key;
+    }
+    focused = key;
+    updateSelection(focus);
+  }
+
   function toggleFolder(key) {
     if (collapsed.has(key)) collapsed.delete(key);
     else collapsed.add(key);
-    selected = key;
-    persist();
+    focused = key;
     render(true);
   }
 
@@ -77,6 +107,8 @@
       row.dataset.key = key;
       row.dataset.parent = parentKey;
       row.dataset.kind = entry.kind;
+      row.dataset.repoRoot = repository.root;
+      row.dataset.entryId = entry.id;
       row.dataset.vscodeContext = JSON.stringify({
         webviewSection: entry.kind,
         branchDiffLocalRepo: repository.root,
@@ -116,22 +148,36 @@
         open.append(icon("open"));
         open.addEventListener("click", (event) => {
           event.stopPropagation();
-          selectRow(key, false);
-          send("openFile", repository, entry);
+          if (isMac && event.ctrlKey) return;
+          const multi = event.shiftKey || toggleModifier(event);
+          selectRow(key, { extend: event.shiftKey, toggle: toggleModifier(event), focus: Boolean(multi) });
+          if (!multi) send("openFile", repository, entry);
         });
         row.append(open);
       }
       const status = element("span", "status", isFolder ? "" : entry.change.status);
       if (!isFolder) status.dataset.status = entry.change.status;
       row.append(status);
-      row.addEventListener("click", () => {
+      row.addEventListener("click", (event) => {
+        if (isMac && event.ctrlKey) return;
+        selectRow(key, { extend: event.shiftKey, toggle: toggleModifier(event) });
+        if (event.shiftKey || toggleModifier(event)) return;
         if (isFolder) toggleFolder(key);
-        else {
-          selectRow(key);
-          send("openChange", repository, entry);
-        }
+        else send("openChange", repository, entry);
       });
-      row.addEventListener("contextmenu", () => selectRow(key, false));
+      row.addEventListener("contextmenu", () => {
+        if (selected.has(key)) {
+          focused = key;
+          updateSelection();
+        } else {
+          selectRow(key, { focus: false });
+        }
+        const context = JSON.parse(row.dataset.vscodeContext);
+        context.branchDiffLocalSelection = visibleRows
+          .filter((item) => selected.has(item.dataset.key))
+          .map((item) => ({ repoRoot: item.dataset.repoRoot, entryId: item.dataset.entryId }));
+        row.dataset.vscodeContext = JSON.stringify(context);
+      });
       row.addEventListener("keydown", (event) => {
         const index = visibleRows.indexOf(row);
         let target;
@@ -148,8 +194,15 @@
             if (expanded) toggleFolder(key);
             else target = visibleRows.find((item) => item.dataset.key === parentKey);
             break;
-          case "Enter":
           case " ":
+            if (event.shiftKey || toggleModifier(event)) {
+              selectRow(key, { extend: event.shiftKey, toggle: toggleModifier(event) });
+              break;
+            }
+            if (isFolder) toggleFolder(key);
+            else send("openChange", repository, entry);
+            break;
+          case "Enter":
             if (isFolder) toggleFolder(key);
             else send(event.shiftKey ? "openFile" : "openChange", repository, entry);
             break;
@@ -157,7 +210,12 @@
         }
         event.preventDefault();
         if (target) {
-          selectRow(target.dataset.key);
+          if (toggleModifier(event) && !event.shiftKey) {
+            focused = target.dataset.key;
+            updateSelection(true);
+          } else {
+            selectRow(target.dataset.key, { extend: event.shiftKey, toggle: toggleModifier(event) });
+          }
           target.scrollIntoView({ block: "nearest" });
         }
       });
@@ -210,16 +268,24 @@
       } else if (repository.roots.length) {
         const tree = element("div", "tree");
         tree.setAttribute("role", "tree");
+        tree.setAttribute("aria-multiselectable", "true");
         tree.setAttribute("aria-label", model.labels.changedFiles + " · " + repository.name);
         addRows(tree, repository.roots, repository);
         section.append(tree);
       }
       container.append(section);
     }
-    if (!visibleRows.some((row) => row.dataset.key === selected)) {
-      selected = visibleRows[0]?.dataset.key;
+    const visibleKeys = new Set(visibleRows.map((row) => row.dataset.key));
+    const hadSelection = selected.size > 0;
+    for (const key of selected) {
+      if (!visibleKeys.has(key)) selected.delete(key);
     }
-    selectRow(selected, focus || hadFocus);
+    if (!visibleKeys.has(focused)) {
+      focused = [...selected][0] || visibleRows[0]?.dataset.key;
+    }
+    if (hadSelection && !selected.size && focused) selected.add(focused);
+    if (!visibleKeys.has(anchor)) anchor = focused;
+    updateSelection(focus || hadFocus);
     window.scrollTo(0, scroll);
   }
 

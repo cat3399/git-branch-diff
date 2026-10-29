@@ -6,7 +6,7 @@ import { mkdir, mkdtemp, readFile, rename, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import * as path from "node:path";
 import {
-  compareRefs, HEAD_REF, INDEX_REF, listBranches, listCommits, NoMergeBaseError,
+  compareRefs, getMainlineBranch, HEAD_REF, INDEX_REF, listBranches, listCommits, NoMergeBaseError,
   resolveCommit, showFileAtRef, verifyRef, WORKTREE_REF,
 } from "./git";
 
@@ -43,6 +43,59 @@ async function fixture() {
   const second = await resolveCommit(root, HEAD_REF);
   return { root, temporary, git, write, first, second };
 }
+
+test("mainline detection respects remote defaults and leaves ambiguous choices to the user", async (t) => {
+  await t.test("remote defaults override branch names, with origin taking precedence", async () => {
+    const { root, git, second } = await fixture();
+    const mainline = async () => (await getMainlineBranch(root, await listBranches(root)))?.ref;
+    assert.equal(await mainline(), "refs/heads/main");
+    await git("branch", "master");
+    assert.equal(await mainline(), undefined);
+    await git("update-ref", "refs/remotes/origin/master", second);
+    assert.equal(await mainline(), "refs/remotes/origin/master");
+    await git("update-ref", "refs/remotes/origin/main", second);
+    assert.equal(await mainline(), undefined);
+    await git("update-ref", "refs/remotes/upstream/stable", second);
+    await git("symbolic-ref", "refs/remotes/upstream/HEAD", "refs/remotes/upstream/stable");
+    assert.equal(await mainline(), "refs/remotes/upstream/stable");
+    await git("update-ref", "refs/remotes/origin/trunk", second);
+    await git("symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/trunk");
+    assert.equal(await mainline(), "refs/remotes/origin/trunk");
+  });
+
+  await t.test("multiple remote defaults or conventional branches require an explicit choice", async () => {
+    const { root, git, second } = await fixture();
+    const mainline = async () => (await getMainlineBranch(root, await listBranches(root)))?.ref;
+    await git("update-ref", "refs/remotes/upstream/main", second);
+    assert.equal(await mainline(), "refs/remotes/upstream/main");
+    await git("update-ref", "refs/remotes/company/main", second);
+    assert.equal(await mainline(), undefined);
+    await git("symbolic-ref", "refs/remotes/upstream/HEAD", "refs/remotes/upstream/main");
+    await git("symbolic-ref", "refs/remotes/company/HEAD", "refs/remotes/company/main");
+    assert.equal(await mainline(), undefined);
+  });
+});
+
+test("PR comparisons recalculate the ancestor for branch refs and preserve historical selections", async () => {
+  const { root, git, second } = await fixture();
+  const tree = await git("rev-parse", `${second}^{tree}`);
+  const mainline = await git("commit-tree", tree, "-p", second, "-m", "mainline advances");
+  const feature = await git("commit-tree", tree, "-p", second, "-m", "feature starts");
+  const baseRef = "refs/remotes/origin/main";
+  const sourceRef = "refs/heads/feature/review";
+  await git("update-ref", baseRef, mainline);
+  await git("update-ref", sourceRef, feature);
+  assert.equal((await compareRefs(root, baseRef, sourceRef, true)).base, second);
+
+  const merged = await git("commit-tree", tree, "-p", feature, "-p", mainline, "-m", "merge mainline into feature");
+  await git("update-ref", sourceRef, merged);
+  const following = await compareRefs(root, baseRef, sourceRef, true);
+  assert.equal(following.base, mainline);
+  assert.equal(following.source, merged);
+  const historical = await compareRefs(root, baseRef, feature, true);
+  assert.equal(historical.base, second);
+  assert.equal(historical.source, feature);
+});
 
 test("cross-branch history and PR comparisons use the selected commits", async (t) => {
   const { root, temporary, git, write, first, second } = await fixture();

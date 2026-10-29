@@ -1,7 +1,8 @@
 import * as vscode from "vscode";
 import {
-  getCurrentBranch, GitBranch, GitCommit, HEAD_REF, INDEX_REF, listBranches,
-  listCommits, listTags, resolveCommit, verifyRef, WORKTREE_REF,
+  getCurrentBranch, getMainlineBranch, getMergeBase, GitBranch, GitCommit, HEAD_REF,
+  INDEX_REF, isLiveRef, listBranches, listCommits, listTags, NoMergeBaseError,
+  resolveCommit, verifyRef, WORKTREE_REF,
 } from "./git";
 
 export interface RefSelection {
@@ -10,10 +11,16 @@ export interface RefSelection {
   branch?: string;
 }
 
+export type RefPickResult = RefSelection | {
+  kind: "pr";
+  source: RefSelection;
+  target: RefSelection;
+};
+
 type RefItem = vscode.QuickPickItem & {
   ref?: string;
   branch?: GitBranch;
-  action?: "manual" | "branch" | "commits" | "more";
+  action?: "manual" | "branch" | "commits" | "more" | "pr" | "pr-target";
 };
 
 export function refLabel(ref: string, currentBranch = "", branch?: string): string {
@@ -28,19 +35,28 @@ export function refLabel(ref: string, currentBranch = "", branch?: string): stri
   return ref.replace(/^refs\/(heads|remotes|tags)\//, "");
 }
 
-/** Identical choices for the left and right sides of a comparison. */
+/** Both sides can turn the opposite selection into the source of a PR comparison. */
 export async function pickRef(
   repoRoot: string,
   title: string,
-  selected?: string
-): Promise<RefSelection | undefined> {
+  selected?: string,
+  opposite?: RefSelection
+): Promise<RefPickResult | undefined> {
   const [branches, tags, current] = await Promise.all([
     listBranches(repoRoot), listTags(repoRoot), getCurrentBranch(repoRoot).catch(() => ""),
   ]);
   const separator = (label: string): RefItem => ({
     label, kind: vscode.QuickPickItemKind.Separator,
   });
+  const prSource = opposite?.ref === HEAD_REF && current && current !== HEAD_REF
+    ? { ref: "refs/heads/" + current } : opposite;
+  const prItems = prSource ? await buildPrItems(repoRoot, prSource, branches) : [];
   const items: RefItem[] = [
+    ...(prItems.length && prSource ? [
+      separator(vscode.l10n.t("PR comparison · {0}", refLabel(prSource.ref, current, prSource.branch))),
+      ...prItems,
+      separator(vscode.l10n.t("Other versions")),
+    ] : []),
     {
       label: "$(files) " + vscode.l10n.t("Working Tree"),
       description: vscode.l10n.t("Current files, including uncommitted changes"),
@@ -65,6 +81,9 @@ export async function pickRef(
   ];
   for (const remote of [false, true]) {
     const group = branches.filter((branch) => branch.remote === remote);
+    if (!remote) {
+      group.sort((left, right) => Number(right.name === current) - Number(left.name === current));
+    }
     if (!group.length) continue;
     items.push(separator(remote ? vscode.l10n.t("Remote branches") : vscode.l10n.t("Local branches")));
     for (const branch of group) {
@@ -86,8 +105,25 @@ export async function pickRef(
       title,
       placeHolder: vscode.l10n.t("Select a branch for its latest commit or history, or choose another version"),
       matchOnDescription: true,
+      matchOnDetail: true,
     });
     if (!picked) return undefined;
+    if (picked.action === "pr" && picked.branch && prSource) {
+      return { kind: "pr", source: prSource, target: { ref: picked.branch.ref } };
+    }
+    if (picked.action === "pr-target" && prSource) {
+      const target = await vscode.window.showQuickPick(branches.map((branch) => ({
+        label: branch.name,
+        description: branch.remote ? vscode.l10n.t("Remote branches") : vscode.l10n.t("Local branches"),
+        branch,
+      })), {
+        title: vscode.l10n.t("Choose a PR target branch…"),
+        placeHolder: vscode.l10n.t("Select the branch you would merge into"),
+        matchOnDescription: true,
+      });
+      if (!target) continue;
+      return { kind: "pr", source: prSource, target: { ref: target.branch.ref } };
+    }
     if (picked.action === "commits" || picked.action === "branch") {
       const result = await pickCommit(repoRoot, title, picked.branch);
       if (result === "back") continue;
@@ -107,6 +143,42 @@ export async function pickRef(
     });
     return input?.trim() ? { ref: input.trim() } : undefined;
   }
+}
+
+async function buildPrItems(repoRoot: string, source: RefSelection, branches: GitBranch[]): Promise<RefItem[]> {
+  if (isLiveRef(source.ref) || !branches.length || !await verifyRef(repoRoot, source.ref)) return [];
+  const mainline = await getMainlineBranch(repoRoot, branches);
+  const sourceBranch = branches.find((branch) =>
+    branch.ref === (source.branch ?? source.ref) || branch.name === (source.branch ?? source.ref));
+  const mainlineName = mainline?.remote ? mainline.name.replace(/^[^/]+\//, "") : mainline?.name;
+  if (mainline && sourceBranch && (sourceBranch.ref === mainline.ref
+    || (!sourceBranch.remote && sourceBranch.name === mainlineName))) return [];
+
+  const items: RefItem[] = [];
+  let targetDetail = vscode.l10n.t("View changes from the common ancestor with another target branch");
+  if (mainline) {
+    try {
+      const sourceCommit = await resolveCommit(repoRoot, source.ref);
+      const mergeBase = await getMergeBase(repoRoot, sourceCommit, mainline.ref);
+      const [commit] = await listCommits(repoRoot, 0, 1, mergeBase);
+      items.push({
+        label: "$(git-pull-request) " + vscode.l10n.t("Compare with mainline (PR)"),
+        description: mainline.name,
+        detail: vscode.l10n.t("Merge base: {0} · {1}", mergeBase.slice(0, 9), commit.subject),
+        branch: mainline,
+        action: "pr",
+      });
+    } catch (error) {
+      if (!(error instanceof NoMergeBaseError)) throw error;
+      targetDetail = vscode.l10n.t("No common ancestor with {0}; choose another target branch", mainline.name);
+    }
+  }
+  items.push({
+    label: "$(git-branch) " + vscode.l10n.t("Choose a PR target branch…"),
+    detail: targetDetail,
+    action: "pr-target",
+  });
+  return items;
 }
 
 /** Keep the picker open while paging so search and keyboard selection persist. */

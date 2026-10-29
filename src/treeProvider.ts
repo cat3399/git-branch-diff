@@ -114,9 +114,9 @@ export class RepoSession {
     return this.excludedPaths.size > 0;
   }
 
-  excludeEntry(entry: FileTreeEntry): void {
-    if (this.loading) return;
-    this.excludedPaths.set(entry.path, entry.kind);
+  excludeEntries(entries: FileTreeEntry[]): void {
+    if (this.loading || !entries.length) return;
+    for (const entry of entries) this.excludedPaths.set(entry.path, entry.kind);
     this.rebuildTree();
     this.onChanged();
   }
@@ -128,12 +128,10 @@ export class RepoSession {
   }
 
   private rebuildTree(): void {
-    const visible = [...this.changes.values()].filter((change) => {
-      for (const [excluded, kind] of this.excludedPaths) {
-        if (change.path === excluded || (kind === "folder" && change.path.startsWith(excluded + "/"))) return false;
-      }
-      return true;
-    });
+    const folders = [...this.excludedPaths].filter(([, kind]) => kind === "folder").map(([folder]) => folder + "/");
+    const visible = [...this.changes.values()].filter((change) =>
+      !this.excludedPaths.has(change.path) && !folders.some((folder) => change.path.startsWith(folder))
+    );
     const config = vscode.workspace.getConfiguration("branchDiffLocal", vscode.Uri.file(this.repoRoot));
     const tree = buildFileTree(visible, config.get<boolean>("groupByFolder", true));
     this.roots = tree.roots;
@@ -152,12 +150,15 @@ export class RepoSession {
     await this.refresh();
   }
 
-  async setComparison(source: RefSelection, target: RefSelection): Promise<void> {
-    if (source.ref !== this.source.ref || target.ref !== this.target?.ref) this.excludedPaths.clear();
-    await Promise.all([
+  async setComparison(source: RefSelection, target: RefSelection, useMergeBase?: boolean): Promise<void> {
+    if (source.ref !== this.source.ref || target.ref !== this.target?.ref
+      || (useMergeBase !== undefined && useMergeBase !== this.useMergeBase)) this.excludedPaths.clear();
+    const updates = [
       this.context.workspaceState.update(this.key(SOURCE_KEY), source),
       this.context.workspaceState.update(this.key(TARGET_KEY), target),
-    ]);
+    ];
+    if (useMergeBase !== undefined) updates.push(this.context.workspaceState.update(this.key(MODE_KEY), useMergeBase));
+    await Promise.all(updates);
     await this.refresh();
   }
 

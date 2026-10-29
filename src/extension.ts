@@ -6,23 +6,30 @@ import { discoverRepos, onDidChangeRepos } from "./repos";
 import { pickRef } from "./refPicker";
 import { ChangedFilesProvider, ChangePayload, EntryContext, entryUri, RepoSession } from "./treeProvider";
 import { ChangedFilesView } from "./treeView";
+import { FileTreeEntry } from "./fileTree";
 
 export async function activate(context: vscode.ExtensionContext) {
   const contentProvider = new BranchDiffContentProvider();
   const treeProvider = new ChangedFilesProvider(context);
   const treeView = new ChangedFilesView(context.extensionUri, treeProvider);
+  const updateDiffContext = () => {
+    void vscode.commands.executeCommand("setContext", "branchDiffLocal.diffActive", Boolean(getActiveBranchDiff()));
+  };
   context.subscriptions.push(
     contentProvider,
     treeProvider,
     treeView,
     vscode.workspace.registerTextDocumentContentProvider(BRANCH_DIFF_SCHEME, contentProvider),
     vscode.window.registerWebviewViewProvider("branchDiffLocal.filesView", treeView),
+    vscode.window.tabGroups.onDidChangeTabs(updateDiffContext),
+    vscode.window.tabGroups.onDidChangeTabGroups(updateDiffContext),
     treeProvider.onDidChangeTreeData(() => {
       contentProvider.refresh();
       void vscode.commands.executeCommand("setContext", "branchDiffLocal.hasExclusions",
         treeProvider.sessionList().some((session) => session.hasExclusions));
     })
   );
+  updateDiffContext();
 
   const reload = async () => {
     const repos = await discoverRepos();
@@ -76,14 +83,18 @@ export async function activate(context: vscode.ExtensionContext) {
   register("selectTarget", async (arg) => {
     const session = await resolveRepo(arg);
     if (!session) return;
-    const selected = await pickRef(session.repoRoot, vscode.l10n.t("Select base (left)"), session.target?.ref);
-    if (selected) await session.setTarget(selected);
+    const selected = await pickRef(session.repoRoot, vscode.l10n.t("Select base (left)"), session.target?.ref, session.source);
+    if (!selected) return;
+    if ("kind" in selected) await session.setComparison(selected.source, selected.target, true);
+    else await session.setTarget(selected);
   });
   register("selectSource", async (arg) => {
     const session = await resolveRepo(arg);
     if (!session) return;
-    const selected = await pickRef(session.repoRoot, vscode.l10n.t("Select comparison (right)"), session.source.ref);
-    if (selected) await session.setSource(selected);
+    const selected = await pickRef(session.repoRoot, vscode.l10n.t("Select comparison (right)"), session.source.ref, session.target);
+    if (!selected) return;
+    if ("kind" in selected) await session.setComparison(selected.source, selected.target, true);
+    else await session.setSource(selected);
   });
   register("swap", async (arg) => {
     const session = await resolveRepo(arg);
@@ -97,6 +108,11 @@ export async function activate(context: vscode.ExtensionContext) {
   register("refresh", async (arg) => {
     if (arg) await (await resolveRepo(arg))?.refresh();
     else await treeProvider.refreshAll();
+  });
+
+  register("toggleDiffLayout", async () => {
+    if (!getActiveBranchDiff()) return;
+    await vscode.commands.executeCommand("toggle.diff.renderSideBySide");
   });
 
   register("selectComparisonMode", async (arg) => {
@@ -168,7 +184,24 @@ export async function activate(context: vscode.ExtensionContext) {
   });
   register("excludeEntry", async (arg) => {
     const node = await resolveEntry(arg);
-    if (node) node.session.excludeEntry(node.entry);
+    if (!node) return;
+    const selection = arg && typeof arg === "object" && "branchDiffLocalSelection" in arg
+      ? arg.branchDiffLocalSelection : undefined;
+    if (!Array.isArray(selection)) {
+      node.session.excludeEntries([node.entry]);
+      return;
+    }
+    const groups = new Map<RepoSession, FileTreeEntry[]>();
+    for (const item of selection) {
+      if (!item || typeof item !== "object" || typeof item.repoRoot !== "string" || typeof item.entryId !== "string") continue;
+      const session = treeProvider.getSession(item.repoRoot);
+      const entry = session?.getEntry(item.entryId);
+      if (!session || !entry) continue;
+      const entries = groups.get(session) ?? [];
+      entries.push(entry);
+      groups.set(session, entries);
+    }
+    for (const [session, entries] of groups) session.excludeEntries(entries);
   });
   register("restoreExcluded", async (arg) => {
     const session = await resolveRepo(arg);
@@ -204,6 +237,13 @@ export async function activate(context: vscode.ExtensionContext) {
     })
   );
   await reload();
+}
+
+function getActiveBranchDiff(): vscode.TabInputTextDiff | undefined {
+  const input = vscode.window.tabGroups.activeTabGroup.activeTab?.input;
+  if (!(input instanceof vscode.TabInputTextDiff)) return undefined;
+  return input.original.scheme === BRANCH_DIFF_SCHEME || input.modified.scheme === BRANCH_DIFF_SCHEME
+    ? input : undefined;
 }
 
 async function openChange(payload: ChangePayload): Promise<void> {
